@@ -33,6 +33,7 @@ import com.hmdm.launcher.json.ServerConfig;
 import com.hmdm.launcher.pro.worker.DetailedInfoWorker;
 import com.hmdm.launcher.server.ServerServiceKeeper;
 import com.hmdm.launcher.service.PushLongPollingService;
+import com.hmdm.launcher.service.ReopenAppService;
 import com.hmdm.launcher.task.ConfirmDeviceResetTask;
 import com.hmdm.launcher.task.ConfirmPasswordResetTask;
 import com.hmdm.launcher.task.ConfirmRebootTask;
@@ -925,8 +926,24 @@ public class ConfigUpdater {
     }
 
     private void lockRestrictions() {
-        if (settingsHelper.getConfig() != null && settingsHelper.getConfig().getRestrictions() != null) {
-            Utils.lockUserRestrictions(context, settingsHelper.getConfig().getRestrictions());
+        ServerConfig config = settingsHelper.getConfig();
+        if (config != null && config.getRestrictions() != null) {
+            Utils.lockUserRestrictions(context, config.getRestrictions());
+        }
+        if (config != null && Boolean.TRUE.equals(config.getBlockAddUser())) {
+            Utils.applyBlockAddUser(context, true);
+        } else {
+            Utils.applyBlockAddUser(context, false);
+        }
+        if (config != null && config.getReopenAppPackage() != null && !config.getReopenAppPackage().trim().isEmpty()) {
+            Intent reopenIntent = new Intent(context, ReopenAppService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(reopenIntent);
+            } else {
+                context.startService(reopenIntent);
+            }
+        } else {
+            context.stopService(new Intent(context, ReopenAppService.class));
         }
         String lockedPackages = settingsHelper.getAppPreference(context.getPackageName(), "locked_packages");
         Utils.lockPackages(context, lockedPackages, true);

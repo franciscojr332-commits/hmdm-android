@@ -89,6 +89,12 @@ public class ServerConfig {
     private Boolean kioskScreenOn;
     private String restrictions;
 
+    private Boolean blockAirplaneMode;
+    private String blockPowerOffFrom;
+    private String blockPowerOffTo;
+    private String reopenAppPackage;
+    private Boolean blockAddUser;
+
     private String description;
     private String custom1;
     private String custom2;
@@ -665,6 +671,46 @@ public class ServerConfig {
 
     public void setRestrictions(String restrictions) {
         this.restrictions = restrictions;
+    }
+
+    public Boolean getBlockAirplaneMode() {
+        return blockAirplaneMode;
+    }
+
+    public void setBlockAirplaneMode(Boolean blockAirplaneMode) {
+        this.blockAirplaneMode = blockAirplaneMode;
+    }
+
+    public String getBlockPowerOffFrom() {
+        return blockPowerOffFrom;
+    }
+
+    public void setBlockPowerOffFrom(String blockPowerOffFrom) {
+        this.blockPowerOffFrom = blockPowerOffFrom;
+    }
+
+    public String getBlockPowerOffTo() {
+        return blockPowerOffTo;
+    }
+
+    public void setBlockPowerOffTo(String blockPowerOffTo) {
+        this.blockPowerOffTo = blockPowerOffTo;
+    }
+
+    public String getReopenAppPackage() {
+        return reopenAppPackage;
+    }
+
+    public void setReopenAppPackage(String reopenAppPackage) {
+        this.reopenAppPackage = reopenAppPackage;
+    }
+
+    public Boolean getBlockAddUser() {
+        return blockAddUser;
+    }
+
+    public void setBlockAddUser(Boolean blockAddUser) {
+        this.blockAddUser = blockAddUser;
     }
 
     public String getDescription() {

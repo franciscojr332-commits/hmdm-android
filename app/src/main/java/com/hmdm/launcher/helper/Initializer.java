@@ -288,6 +288,10 @@ public class Initializer {
         }
 
         Utils.disableScreenshots(config.isDisableScreenshots(), context);
+
+        if (Boolean.TRUE.equals(config.getBlockAirplaneMode()) && Utils.isDeviceOwner(context)) {
+            Utils.setAirplaneModeBlocked(context, true);
+        }
     }
 
 }

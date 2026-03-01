@@ -989,6 +989,85 @@ public class Utils {
         }
     }
 
+    /**
+     * Block or unblock airplane mode. When block is true, airplane mode is turned off (and kept off).
+     * Requires Device Owner. On some devices may not work due to manufacturer restrictions.
+     */
+    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
+    public static void setAirplaneModeBlocked(Context context, boolean block) {
+        if (!isDeviceOwner(context) || Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP || !block) {
+            return;
+        }
+        try {
+            DevicePolicyManager dpm = (DevicePolicyManager) context.getSystemService(Context.DEVICE_POLICY_SERVICE);
+            ComponentName admin = LegacyUtils.getAdminComponentName(context);
+            if (dpm != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                dpm.setGlobalSetting(admin, Settings.Global.AIRPLANE_MODE_ON, "0");
+            } else if (dpm != null) {
+                Settings.Global.putInt(context.getContentResolver(), Settings.Global.AIRPLANE_MODE_ON, 0);
+            }
+        } catch (Exception e) {
+            Log.w(Const.LOG_TAG, "setAirplaneModeBlocked failed", e);
+        }
+    }
+
+    /**
+     * Apply or clear block add/switch user restrictions. Requires Device Owner.
+     */
+    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
+    public static void applyBlockAddUser(Context context, boolean block) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP || !isDeviceOwner(context)) {
+            return;
+        }
+        DevicePolicyManager dpm = (DevicePolicyManager) context.getSystemService(Context.DEVICE_POLICY_SERVICE);
+        ComponentName admin = LegacyUtils.getAdminComponentName(context);
+        if (dpm == null) return;
+        try {
+            if (block) {
+                dpm.addUserRestriction(admin, UserManager.DISALLOW_ADD_USER);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    dpm.addUserRestriction(admin, UserManager.DISALLOW_SWITCH_USER);
+                }
+            } else {
+                dpm.clearUserRestriction(admin, UserManager.DISALLOW_ADD_USER);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    dpm.clearUserRestriction(admin, UserManager.DISALLOW_SWITCH_USER);
+                }
+            }
+        } catch (Exception e) {
+            Log.w(Const.LOG_TAG, "applyBlockAddUser failed", e);
+        }
+    }
+
+    /**
+     * Returns true if current time (device timezone) is inside the block power-off window [from, to] (HH:mm).
+     */
+    public static boolean isInsideBlockPowerOffWindow(ServerConfig config) {
+        if (config == null || config.getBlockPowerOffFrom() == null || config.getBlockPowerOffTo() == null) {
+            return false;
+        }
+        try {
+            String from = config.getBlockPowerOffFrom().trim();
+            String to = config.getBlockPowerOffTo().trim();
+            if (from.length() < 4 || to.length() < 4) return false;
+            int fromHour = Integer.parseInt(from.substring(0, 2));
+            int fromMin = Integer.parseInt(from.substring(3, 5));
+            int toHour = Integer.parseInt(to.substring(0, 2));
+            int toMin = Integer.parseInt(to.substring(3, 5));
+            java.util.Calendar cal = java.util.Calendar.getInstance();
+            int currentMinutes = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE);
+            int fromMinutes = fromHour * 60 + fromMin;
+            int toMinutes = toHour * 60 + toMin;
+            if (fromMinutes <= toMinutes) {
+                return currentMinutes >= fromMinutes && currentMinutes < toMinutes;
+            } else {
+                return currentMinutes >= fromMinutes || currentMinutes < toMinutes;
+            }
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     // Setting proxyUrl=null clears the proxy previously set up
     @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
     public static boolean setProxy(Context context, String proxyUrl) {

@@ -522,6 +522,16 @@ public class MainActivity
         return super.onKeyUp(keyCode, event);
     }
 
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_POWER && settingsHelper != null) {
+            if (Utils.isInsideBlockPowerOffWindow(settingsHelper.getConfig())) {
+                return true;
+            }
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
     // Workaround against crash "App is in background" on Android 9: this is an Android OS bug
     // https://stackoverflow.com/questions/52013545/android-9-0-not-allowed-to-start-service-app-is-in-background-after-onresume
     private void startServicesWithRetry() {

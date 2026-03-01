@@ -146,6 +146,7 @@ public class AdminActivity extends BaseActivity {
             restrictions = "," + settingsHelper.getConfig().getRestrictions();
         }
         Utils.unlockUserRestrictions(this, restrictions);
+        Utils.applyBlockAddUser(this, false);
         Utils.disableScreenshots(false, this);
         LocalBroadcastManager.getInstance( this ).sendBroadcast( new Intent( Const.ACTION_PERMISSIVE_MODE ) );
         LocalBroadcastManager.getInstance( this ).sendBroadcast( new Intent( Const.ACTION_STOP_CONTROL ) );

@@ -272,6 +272,13 @@
                 android:value="Push notification service"/>
         </service>
 
+        <service android:name=".service.ReopenAppService"
+            android:foregroundServiceType="specialUse|systemExempted"
+            android:exported="false">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keep configured app running"/>
+        </service>
+
     </application>
 
 </manifest>
