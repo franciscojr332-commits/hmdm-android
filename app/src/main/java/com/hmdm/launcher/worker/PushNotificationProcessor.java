@@ -144,15 +144,70 @@ public class PushNotificationProcessor {
             return;
         }
         try {
-            String pkg = payload.getString("pkg");
-            String action = payload.optString("action", null);
-            JSONObject extras = payload.optJSONObject("extra");
-            String data = payload.optString("data", null);
+            String pkg = payload.optString("pkg", null);
+            if (pkg == null || pkg.trim().isEmpty()) {
+                RemoteLogger.log(context, Const.LOG_WARN, "runApp: missing pkg");
+                return;
+            }
+            pkg = pkg.trim();
+
+            boolean background = payload.optBoolean("background", false);
+            String component = payload.optString("component", null);
+            if (component != null) {
+                component = component.trim();
+            }
+
+            if (background && component != null && !component.isEmpty()) {
+                // Run app in background: start the specified Service
+                Intent serviceIntent = new Intent();
+                serviceIntent.setComponent(new ComponentName(pkg, component));
+                String action = payload.optString("action", null);
+                if (action != null) {
+                    serviceIntent.setAction(action);
+                }
+                String data = payload.optString("data", null);
+                if (data != null) {
+                    try {
+                        serviceIntent.setData(Uri.parse(data));
+                    } catch (Exception e) {
+                        Log.w(Const.LOG_TAG, "runApp background: invalid data URI", e);
+                    }
+                }
+                JSONObject extras = payload.optJSONObject("extra");
+                if (extras != null) {
+                    Iterator<String> keys = extras.keys();
+                    while (keys.hasNext()) {
+                        String key = keys.next();
+                        Object value = extras.get(key);
+                        if (value instanceof String) {
+                            serviceIntent.putExtra(key, (String) value);
+                        } else if (value instanceof Integer) {
+                            serviceIntent.putExtra(key, ((Integer) value).intValue());
+                        } else if (value instanceof Float) {
+                            serviceIntent.putExtra(key, ((Float) value).floatValue());
+                        } else if (value instanceof Boolean) {
+                            serviceIntent.putExtra(key, ((Boolean) value).booleanValue());
+                        }
+                    }
+                }
+                try {
+                    context.startService(serviceIntent);
+                    RemoteLogger.log(context, Const.LOG_INFO, "runApp: started service " + pkg + "/" + component);
+                } catch (Exception e) {
+                    Log.w(Const.LOG_TAG, "runApp: failed to start service " + pkg + "/" + component, e);
+                    RemoteLogger.log(context, Const.LOG_WARN, "runApp background failed: " + e.getMessage());
+                }
+                return;
+            }
+
+            // Foreground: start launcher activity
             Intent launchIntent = context.getPackageManager().getLaunchIntentForPackage(pkg);
             if (launchIntent != null) {
+                String action = payload.optString("action", null);
                 if (action != null) {
                     launchIntent.setAction(action);
                 }
+                String data = payload.optString("data", null);
                 if (data != null) {
                     try {
                         launchIntent.setData(Uri.parse(data));
@@ -160,6 +215,7 @@ public class PushNotificationProcessor {
                         e.printStackTrace();
                     }
                 }
+                JSONObject extras = payload.optJSONObject("extra");
                 if (extras != null) {
                     Iterator<String> keys = extras.keys();
                     String key;
@@ -183,6 +239,8 @@ public class PushNotificationProcessor {
                 launchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK |
                         Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
                 context.startActivity(launchIntent);
+            } else {
+                RemoteLogger.log(context, Const.LOG_WARN, "runApp: no launcher activity for " + pkg);
             }
         } catch (Exception e) {
             e.printStackTrace();
