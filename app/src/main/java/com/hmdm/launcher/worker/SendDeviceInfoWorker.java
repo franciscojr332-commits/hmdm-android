@@ -23,7 +23,7 @@ import retrofit2.Response;
 
 public class SendDeviceInfoWorker extends Worker {
 
-    private static final int SEND_DEVICE_INFO_PERIOD_MINS = 15;
+    private static final int SEND_DEVICE_INFO_PERIOD_MINS = 5;
 
     private static final String WORK_TAG_DEVICEINFO = "com.hmdm.launcher.WORK_TAG_DEVICEINFO";
 
