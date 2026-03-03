@@ -1775,6 +1775,7 @@ public class MainActivity
                         @Override
                         public void onImageLoadFailed(Picasso picasso, Uri uri, Exception exception)
                         {
+                            Log.e(Const.LOG_TAG, "Background image load failed: uri=" + uri + " error=" + (exception != null ? exception.getMessage() : "null"), exception);
                             // On fault, get the background image from the cache
                             // This is a workaround against a bug in Picasso: it doesn't display cached images by default!
                             picasso.load(config.getBackgroundImageUrl())
