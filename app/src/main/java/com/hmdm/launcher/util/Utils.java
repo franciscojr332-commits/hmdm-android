@@ -1023,15 +1023,17 @@ public class Utils {
         ComponentName admin = LegacyUtils.getAdminComponentName(context);
         if (dpm == null) return;
         try {
+            // DISALLOW_SWITCH_USER was removed from UserManager in API 34; use string literal
+            final String noSwitchUser = "no_switch_user";
             if (block) {
                 dpm.addUserRestriction(admin, UserManager.DISALLOW_ADD_USER);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    dpm.addUserRestriction(admin, UserManager.DISALLOW_SWITCH_USER);
+                    dpm.addUserRestriction(admin, noSwitchUser);
                 }
             } else {
                 dpm.clearUserRestriction(admin, UserManager.DISALLOW_ADD_USER);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    dpm.clearUserRestriction(admin, UserManager.DISALLOW_SWITCH_USER);
+                    dpm.clearUserRestriction(admin, noSwitchUser);
                 }
             }
         } catch (Exception e) {
