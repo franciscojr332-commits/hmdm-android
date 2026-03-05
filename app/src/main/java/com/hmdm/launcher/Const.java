@@ -74,6 +74,8 @@ public class Const {
     public static final String PREFERENCES_MIUI_OPTIMIZATION = "PREFERENCES_MIUI_OPTIMIZATION";
     public static final String PREFERENCES_LOG_STRING = "PREFERENCES_LOG_STRING";
     public static final String PREFERENCES_DATA_TOKEN = "PREFERENCES_DATA_TOKEN";
+    /** URL of the background image currently saved in persistent cache (only refresh when MDM sends a new URL) */
+    public static final String PREFERENCES_CACHED_BACKGROUND_IMAGE_URL = "PREFERENCES_CACHED_BACKGROUND_IMAGE_URL";
 
     public static final int MIUI_PERMISSIONS = 0;
     public static final int MIUI_DEVELOPER = 1;

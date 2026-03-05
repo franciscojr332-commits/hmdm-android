@@ -34,9 +34,11 @@ import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Point;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.location.LocationManager;
 import android.net.ConnectivityManager;
@@ -110,6 +112,7 @@ import com.hmdm.launcher.task.GetServerConfigTask;
 import com.hmdm.launcher.task.SendDeviceInfoTask;
 import com.hmdm.launcher.ui.custom.StatusBarUpdater;
 import com.hmdm.launcher.util.AppInfo;
+import com.hmdm.launcher.util.BackgroundImageCache;
 import com.hmdm.launcher.util.CrashLoopProtection;
 import com.hmdm.launcher.util.DeviceInfoProvider;
 import com.hmdm.launcher.util.InstallUtils;
@@ -121,6 +124,7 @@ import com.hmdm.launcher.worker.SendDeviceInfoWorker;
 import com.jakewharton.picasso.OkHttp3Downloader;
 import com.squareup.picasso.NetworkPolicy;
 import com.squareup.picasso.Picasso;
+import com.squareup.picasso.Target;
 
 import org.apache.commons.io.FileUtils;
 
@@ -1747,52 +1751,83 @@ public class MainActivity
             needRedrawContentAfterReconfigure = false;
 
             if ( config.getBackgroundImageUrl() != null && config.getBackgroundImageUrl().length() > 0 ) {
-                if (picasso == null) {
-                    // Initialize it once because otherwise it doesn't work offline
-                    Picasso.Builder builder = new Picasso.Builder(this);
-                    if (BuildConfig.TRUST_ANY_CERTIFICATE) {
-                        builder.downloader(new OkHttp3Downloader(UnsafeOkHttpClient.getUnsafeOkHttpClient()));
-                    } else {
-                        // Add signature to all requests to protect against unauthorized API calls
-                        // For TRUST_ANY_CERTIFICATE, we won't add signatures because it's unsafe anyway
-                        // and is just a workaround to use Headwind MDM on the LAN
-                        OkHttpClient clientWithSignature = new OkHttpClient.Builder()
-                                .cache(new Cache(new File(getApplication().getCacheDir(), "image_cache"), 1000000L))
-                                .addInterceptor(chain -> {
-                                    okhttp3.Request.Builder requestBuilder = chain.request().newBuilder();
-                                    String signature = InstallUtils.getRequestSignature(chain.request().url().toString());
-                                    if (signature != null) {
-                                        requestBuilder.addHeader("X-Request-Signature", signature);
-                                    }
-                                    return chain.proceed(requestBuilder.build());
-
-                                })
-                                .build();
-                        builder.downloader(new OkHttp3Downloader(clientWithSignature));
+                String backgroundUrl = config.getBackgroundImageUrl().trim();
+                if (!backgroundUrl.startsWith("http://") && !backgroundUrl.startsWith("https://")) {
+                    String base = settingsHelper != null ? settingsHelper.getBaseUrl() : null;
+                    if (base != null && base.length() > 0) {
+                        base = base.replaceAll("/$", "");
+                        backgroundUrl = backgroundUrl.startsWith("/") ? (base + backgroundUrl) : (base + "/" + backgroundUrl);
                     }
-                    builder.listener(new Picasso.Listener()
-                    {
-                        @Override
-                        public void onImageLoadFailed(Picasso picasso, Uri uri, Exception exception)
-                        {
+                }
+                final String finalBackgroundUrl = backgroundUrl;
+                if (finalBackgroundUrl.startsWith("http")) {
+                    // When MDM sends a new URL, clear old cached file so we fetch the new image
+                    BackgroundImageCache.clearIfUrlChanged(this, finalBackgroundUrl);
+                    File cachedFile = BackgroundImageCache.getCachedFile(this, finalBackgroundUrl);
+
+                    if (picasso == null) {
+                        // Initialize it once because otherwise it doesn't work offline
+                        Picasso.Builder builder = new Picasso.Builder(this);
+                        if (BuildConfig.TRUST_ANY_CERTIFICATE) {
+                            builder.downloader(new OkHttp3Downloader(UnsafeOkHttpClient.getUnsafeOkHttpClient()));
+                        } else {
+                            OkHttpClient clientWithSignature = new OkHttpClient.Builder()
+                                    .cache(new Cache(new File(getApplication().getCacheDir(), "image_cache"), 1000000L))
+                                    .addInterceptor(chain -> {
+                                        okhttp3.Request.Builder requestBuilder = chain.request().newBuilder();
+                                        String signature = InstallUtils.getRequestSignature(chain.request().url().toString());
+                                        if (signature != null) {
+                                            requestBuilder.addHeader("X-Request-Signature", signature);
+                                        }
+                                        return chain.proceed(requestBuilder.build());
+                                    })
+                                    .build();
+                            builder.downloader(new OkHttp3Downloader(clientWithSignature));
+                        }
+                        builder.listener((picasso1, uri, exception) -> {
                             Log.e(Const.LOG_TAG, "Background image load failed: uri=" + uri + " error=" + (exception != null ? exception.getMessage() : "null"), exception);
-                            // On fault, get the background image from the cache
-                            // This is a workaround against a bug in Picasso: it doesn't display cached images by default!
-                            picasso.load(config.getBackgroundImageUrl())
+                            picasso1.load(finalBackgroundUrl)
                                     .networkPolicy(NetworkPolicy.OFFLINE)
                                     .fit()
                                     .centerCrop()
                                     .into(binding.activityMainBackground);
-                        }
-                    });
-                    picasso = builder.build();
-                }
+                        });
+                        picasso = builder.build();
+                    }
 
-                picasso.load(config.getBackgroundImageUrl())
-                    // fit and centerCrop is a workaround against a crash on too large images on some devices
-                    .fit()
-                    .centerCrop()
-                    .into(binding.activityMainBackground);
+                    if (cachedFile != null) {
+                        // Use persistent cache: no network, works offline. Only refresh when MDM sends new URL.
+                        picasso.load(cachedFile)
+                                .fit()
+                                .centerCrop()
+                                .into(binding.activityMainBackground);
+                    } else {
+                        // No cache or URL changed: load from network, then save to persistent cache
+                        picasso.load(finalBackgroundUrl)
+                                .fit()
+                                .centerCrop()
+                                .into(new Target() {
+                                    @Override
+                                    public void onBitmapLoaded(Bitmap bitmap, Picasso.LoadedFrom from) {
+                                        binding.activityMainBackground.setImageBitmap(bitmap);
+                                        new Thread(() -> BackgroundImageCache.save(MainActivity.this, finalBackgroundUrl, bitmap)).start();
+                                    }
+                                    @Override
+                                    public void onBitmapFailed(Drawable errorDrawable) {
+                                        Log.e(Const.LOG_TAG, "Background image load failed: uri=" + finalBackgroundUrl);
+                                        picasso.load(finalBackgroundUrl)
+                                                .networkPolicy(NetworkPolicy.OFFLINE)
+                                                .fit()
+                                                .centerCrop()
+                                                .into(binding.activityMainBackground);
+                                    }
+                                    @Override
+                                    public void onPrepareLoad(Drawable placeHolderDrawable) {}
+                                });
+                    }
+                } else {
+                    binding.activityMainBackground.setImageDrawable(null);
+                }
 
             } else {
                 binding.activityMainBackground.setImageDrawable(null);

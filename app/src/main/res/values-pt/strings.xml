@@ -27,7 +27,7 @@
     <string name="dialog_enter_device_id_save">Salvar</string>
     <string name="dialog_enter_device_id_exit">Sair</string>
     <string name="dialog_enter_device_id_title">Digite o ID do Dispositivo em %s</string>
-    <string name="main_start_preparations">Preparar para iniciar</string>
+    <string name="main_start_preparations">Aguarde, iniciando o agente MDM…</string>
     <string name="main_downloading_configuration">Atualizando arquivo de configuração</string>
     <string name="main_downloading_content">Atualizando</string>
     <string name="main_update_applications">Instalando e atualizando aplicativos</string>

@@ -14,28 +14,27 @@ import com.hmdm.launcher.Const;
 public class ConnectionWaiter {
     private static Handler handler = new Handler(Looper.getMainLooper());
 
+    /** Max attempts before proceeding without network (agent starts sooner, config loads when network is available). */
+    private static final int MAX_ATTEMPTS = 5;
+    private static final int WAIT_MS = 2000;
+
     public static boolean waitForConnect(Context context, Runnable uiCallback) {
-        for (int n = 0; n < 10; n++) {
+        for (int n = 0; n < MAX_ATTEMPTS; n++) {
             if (isNetworkAvailable(context)) {
                 if (n > 0) {
-                    try {
-                        Thread.sleep(2000);
-                    } catch (InterruptedException e) {
-                        throw new RuntimeException(e);
-                    }
+                    Log.d(Const.LOG_TAG, "Network is available, resuming flow");
                 }
-                Log.d(Const.LOG_TAG, "Network is available, resuming flow");
                 handler.post(uiCallback);
                 return true;
             }
-            Log.d(Const.LOG_TAG, "Network is unavailable, waiting, attempts: " + (9 - n));
+            Log.d(Const.LOG_TAG, "Network is unavailable, waiting, attempts left: " + (MAX_ATTEMPTS - 1 - n));
             try {
-                Thread.sleep(2000);
+                Thread.sleep(WAIT_MS);
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             }
         }
-        Log.d(Const.LOG_TAG, "Proceed without network!");
+        Log.d(Const.LOG_TAG, "Proceed without network so agent can start; config will load when connection is available");
         handler.post(uiCallback);
         return false;
     }

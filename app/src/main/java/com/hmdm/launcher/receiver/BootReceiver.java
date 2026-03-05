@@ -9,6 +9,7 @@ import com.hmdm.launcher.Const;
 import com.hmdm.launcher.helper.Initializer;
 import com.hmdm.launcher.helper.SettingsHelper;
 import com.hmdm.launcher.pro.ProUtils;
+import com.hmdm.launcher.ui.MainActivity;
 import com.hmdm.launcher.util.RemoteLogger;
 
 public class BootReceiver extends BroadcastReceiver {
@@ -33,18 +34,20 @@ public class BootReceiver extends BroadcastReceiver {
             return;
         }
 
+        // When kiosk is required, bring the launcher to the foreground immediately so the user
+        // sees "Aguarde, iniciando..." instead of another launcher or blank screen while the agent starts.
+        // MainActivity will run Initializer.init() in its onCreate, so we don't run it here to avoid double init.
+        if (ProUtils.kioskModeRequired(context)) {
+            Log.i(Const.LOG_TAG, "Kiosk mode required, starting launcher so system waits for MDM agent");
+            Intent launcherIntent = new Intent(context, MainActivity.class);
+            launcherIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            context.startActivity(launcherIntent);
+            return;
+        }
+
         Initializer.init(context, () -> {
             Initializer.startServicesAndLoadConfig(context);
-
             SettingsHelper.getInstance(context).setMainActivityRunning(false);
-            if (ProUtils.kioskModeRequired(context)) {
-                Log.i(Const.LOG_TAG, "Kiosk mode required, forcing Headwind MDM to run in the foreground");
-                // If kiosk mode is required, then we just simulate clicking Home and starting MainActivity
-                Intent homeIntent = new Intent(Intent.ACTION_MAIN);
-                homeIntent.addCategory(Intent.CATEGORY_HOME);
-                homeIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                context.startActivity(homeIntent);
-            }
         });
     }
 }

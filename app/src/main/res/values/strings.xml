@@ -30,7 +30,7 @@
     <string name="dialog_enter_device_id_save">Save</string>
     <string name="dialog_enter_device_id_exit">Exit</string>
     <string name="dialog_enter_device_id_title">Enter the device ID at %s</string>
-    <string name="main_start_preparations">Preparing to start</string>
+    <string name="main_start_preparations">Please wait, starting MDM agent…</string>
     <string name="main_downloading_configuration">Updating configuration file</string>
     <string name="main_downloading_content">Updating data</string>
     <string name="main_update_applications">Installing and updating applications</string>

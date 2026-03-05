@@ -1042,24 +1042,24 @@ public class Utils {
     }
 
     /**
-     * Returns true if current time (device timezone) is inside the block power-off window [from, to] (HH:mm).
+     * Returns true if current time (device timezone) is inside the block power-off window [from, to].
+     * Expects HH:mm or H:mm from server (e.g. 07:00, 18:00). When window is not set or invalid, returns false
+     * so the device can be turned off ("aparelho pode ser desligado").
      */
     public static boolean isInsideBlockPowerOffWindow(ServerConfig config) {
-        if (config == null || config.getBlockPowerOffFrom() == null || config.getBlockPowerOffTo() == null) {
-            return false;
-        }
+        if (config == null) return false;
+        String fromRaw = config.getBlockPowerOffFrom();
+        String toRaw = config.getBlockPowerOffTo();
+        if (fromRaw == null || toRaw == null) return false;
+        String from = fromRaw.trim();
+        String to = toRaw.trim();
+        if (from.isEmpty() || to.isEmpty()) return false;
         try {
-            String from = config.getBlockPowerOffFrom().trim();
-            String to = config.getBlockPowerOffTo().trim();
-            if (from.length() < 4 || to.length() < 4) return false;
-            int fromHour = Integer.parseInt(from.substring(0, 2));
-            int fromMin = Integer.parseInt(from.substring(3, 5));
-            int toHour = Integer.parseInt(to.substring(0, 2));
-            int toMin = Integer.parseInt(to.substring(3, 5));
+            int fromMinutes = parseTimeToMinutes(from);
+            int toMinutes = parseTimeToMinutes(to);
+            if (fromMinutes < 0 || toMinutes < 0) return false;
             java.util.Calendar cal = java.util.Calendar.getInstance();
             int currentMinutes = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE);
-            int fromMinutes = fromHour * 60 + fromMin;
-            int toMinutes = toHour * 60 + toMin;
             if (fromMinutes <= toMinutes) {
                 return currentMinutes >= fromMinutes && currentMinutes < toMinutes;
             } else {
@@ -1068,6 +1068,17 @@ public class Utils {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    /** Parses "HH:mm" or "H:mm" to minutes since midnight; returns -1 if invalid. */
+    private static int parseTimeToMinutes(String time) {
+        if (time == null || time.length() < 4) return -1;
+        int colon = time.indexOf(':');
+        if (colon <= 0 || colon >= time.length() - 1) return -1;
+        int hour = Integer.parseInt(time.substring(0, colon).trim());
+        int min = Integer.parseInt(time.substring(colon + 1).trim());
+        if (hour < 0 || hour > 23 || min < 0 || min > 59) return -1;
+        return hour * 60 + min;
     }
 
     // Setting proxyUrl=null clears the proxy previously set up
