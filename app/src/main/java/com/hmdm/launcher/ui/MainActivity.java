@@ -1802,10 +1802,9 @@ public class MainActivity
                                 .centerCrop()
                                 .into(binding.activityMainBackground);
                     } else {
-                        // No cache or URL changed: load from network, then save to persistent cache
+                        // No cache or URL changed: load from network, then save to persistent cache.
+                        // Do not use fit()/centerCrop() with Target - Picasso throws IllegalStateException.
                         picasso.load(finalBackgroundUrl)
-                                .fit()
-                                .centerCrop()
                                 .into(new Target() {
                                     @Override
                                     public void onBitmapLoaded(Bitmap bitmap, Picasso.LoadedFrom from) {
