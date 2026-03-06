@@ -291,10 +291,11 @@ public class ConfigUpdater {
                     || pushOptions.equals(ServerConfig.PUSH_OPTIONS_MQTT_ALARM)) {
                 try {
                     URL url = new URL(settingsHelper.getBaseUrl());
+                    String mqttHost = Const.getMqttHost(url.getHost());
                     Runnable nextRunnable = () -> {
                         checkFactoryReset();
                     };
-                    PushNotificationMqttWrapper.getInstance().connect(context, url.getHost(), BuildConfig.MQTT_PORT,
+                    PushNotificationMqttWrapper.getInstance().connect(context, mqttHost, BuildConfig.MQTT_PORT,
                             pushOptions, keepaliveTime, settingsHelper.getDeviceId(), nextRunnable, nextRunnable);
                 } catch (Exception e) {
                     e.printStackTrace();

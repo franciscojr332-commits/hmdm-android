@@ -210,7 +210,8 @@ public class PushNotificationWorker extends Worker {
             PushNotificationMqttWrapper.getInstance().disconnect(context);
             Thread.sleep(5000);
             URL url = new URL(settingsHelper.getBaseUrl());
-            PushNotificationMqttWrapper.getInstance().connect(context, url.getHost(), BuildConfig.MQTT_PORT,
+            String mqttHost = Const.getMqttHost(url.getHost());
+            PushNotificationMqttWrapper.getInstance().connect(context, mqttHost, BuildConfig.MQTT_PORT,
                     pushOptions, keepaliveTime, settingsHelper.getDeviceId(), null, null);
         } catch (Exception e) {
             RemoteLogger.log(context, Const.LOG_DEBUG, "Reconnection failure: " + e.getMessage());
