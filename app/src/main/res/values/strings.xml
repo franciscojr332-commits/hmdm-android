@@ -133,6 +133,8 @@
     <string name="manage_storage_not_supported">Your device has no option to manage the external storage.</string>
     <string name="certificate_install_failed">Failed to install certificate %1$s: %2$s</string>
 
+    <string name="settings_access_blocked">Access to Settings is blocked by administrator.</string>
+
     <string-array name="certificates" translatable="false">
         <!-- If you want to install custom SSL certificates, place them in assets folder
              in the PEM format and list the file names here in the <item> tag. -->

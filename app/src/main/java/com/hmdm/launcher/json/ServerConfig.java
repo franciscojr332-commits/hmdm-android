@@ -94,6 +94,7 @@ public class ServerConfig {
     private String blockPowerOffTo;
     private String reopenAppPackage;
     private Boolean blockAddUser;
+    private Boolean blockSettings;
 
     private String description;
     private String custom1;
@@ -711,6 +712,14 @@ public class ServerConfig {
 
     public void setBlockAddUser(Boolean blockAddUser) {
         this.blockAddUser = blockAddUser;
+    }
+
+    public Boolean getBlockSettings() {
+        return blockSettings;
+    }
+
+    public void setBlockSettings(Boolean blockSettings) {
+        this.blockSettings = blockSettings;
     }
 
     public String getDescription() {

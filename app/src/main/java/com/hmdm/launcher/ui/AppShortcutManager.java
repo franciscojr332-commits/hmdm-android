@@ -3,6 +3,7 @@ package com.hmdm.launcher.ui;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
 
+import com.hmdm.launcher.Const;
 import com.hmdm.launcher.helper.SettingsHelper;
 import com.hmdm.launcher.json.Application;
 import com.hmdm.launcher.util.AppInfo;
@@ -100,6 +101,10 @@ public class AppShortcutManager {
             for ( Application application : applications ) {
                 if (application.isShowIcon() && !application.isRemove() && (bottom == application.isBottom())) {
                     if (application.getType() == null || application.getType().equals(Application.TYPE_APP)) {
+                        if (Boolean.TRUE.equals(config.getConfig().getBlockSettings())
+                                && Const.SETTINGS_PACKAGE_NAME.equals(application.getPkg())) {
+                            continue;
+                        }
                         requiredPackages.put(application.getPkg(), application);
                     } else if (application.getType().equals(Application.TYPE_WEB)) {
                         requiredLinks.put(application.getUrl(), application);

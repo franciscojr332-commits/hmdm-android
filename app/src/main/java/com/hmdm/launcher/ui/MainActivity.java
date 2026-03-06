@@ -579,6 +579,10 @@ public class MainActivity
                 boolean appStarted = false;
                 for (Application application : config.getApplications()) {
                     if (application.isRunAtBoot()) {
+                        if (Boolean.TRUE.equals(config.getBlockSettings())
+                                && Const.SETTINGS_PACKAGE_NAME.equals(application.getPkg())) {
+                            continue;
+                        }
                         // Delay start of each application to 5 sec
                         try {
                             Thread.sleep(PAUSE_BETWEEN_AUTORUNS_SEC * 1000);
@@ -1973,6 +1977,11 @@ public class MainActivity
         while (applicationsForRun.size() > 0) {
             final Application application = applicationsForRun.get(0);
             applicationsForRun.remove(0);
+            if (Boolean.TRUE.equals(settingsHelper.getConfig().getBlockSettings())
+                    && Const.SETTINGS_PACKAGE_NAME.equals(application.getPkg())) {
+                pause += PAUSE_BETWEEN_AUTORUNS_SEC;
+                continue;
+            }
             handler.postDelayed(new Runnable() {
                 @Override
                 public void run() {
