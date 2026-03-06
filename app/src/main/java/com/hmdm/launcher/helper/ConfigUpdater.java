@@ -323,6 +323,9 @@ public class ConfigUpdater {
     private void checkFactoryReset() {
         Log.d(Const.LOG_TAG, "checkFactoryReset() called");
         ServerConfig config = settingsHelper != null ? settingsHelper.getConfig() : null;
+        boolean hasFactoryResetFlag = config != null && config.getFactoryReset() != null && config.getFactoryReset();
+        boolean hasAdminMode = Utils.checkAdminMode(context);
+        Log.d(Const.LOG_TAG, "checkFactoryReset(): factoryReset=" + hasFactoryResetFlag + ", checkAdminMode=" + hasAdminMode);
         if (config != null && config.getFactoryReset() != null && config.getFactoryReset()) {
             // We got a factory reset request, let's confirm and erase everything!
             RemoteLogger.log(context, Const.LOG_INFO, "Device reset by server request");
