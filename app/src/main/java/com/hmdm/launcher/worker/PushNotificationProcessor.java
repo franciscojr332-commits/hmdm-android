@@ -23,6 +23,9 @@ import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Handler;
+import android.os.Looper;
+import android.widget.Toast;
 import android.database.sqlite.SQLiteDatabase;
 import android.net.Uri;
 import android.os.AsyncTask;
@@ -127,6 +130,10 @@ public class PushNotificationProcessor {
         } else if (message.getMessageType().equals(PushMessage.TYPE_CLEAR_APP_DATA)) {
             // Clear application data
             AsyncTask.execute(() -> clearAppData(context, message.getPayloadJSON()));
+            return;
+        } else if (message.getMessageType().equals(PushMessage.TYPE_NOTIFICATION)) {
+            // Show notification/message to the user (Toast)
+            showNotificationToUser(context, message.getPayloadJSON());
             return;
         }
 
@@ -528,6 +535,23 @@ public class PushNotificationProcessor {
             Utils.autoGrantRequestedPermissions(context, app,
                     config.getAppPermissions(), false);
         }
+    }
+
+    private static void showNotificationToUser(Context context, JSONObject payload) {
+        String text = null;
+        if (payload != null) {
+            text = payload.optString("text", null);
+            if (text != null) {
+                text = text.trim();
+            }
+        }
+        if (text == null || text.isEmpty()) {
+            text = "MDM";
+        }
+        final String messageText = text;
+        new Handler(Looper.getMainLooper()).post(() ->
+                Toast.makeText(context.getApplicationContext(), messageText, Toast.LENGTH_LONG).show());
+        RemoteLogger.log(context, Const.LOG_INFO, "Notification shown to user: " + messageText);
     }
 
     private static void clearAppData(Context context, JSONObject payload) {
