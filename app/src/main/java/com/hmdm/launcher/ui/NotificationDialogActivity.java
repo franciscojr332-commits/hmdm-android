@@ -19,19 +19,18 @@
 
 package com.hmdm.launcher.ui;
 
+import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Intent;
 import android.os.Bundle;
-import androidx.appcompat.app.AppCompatActivity;
-
-import com.hmdm.launcher.Const;
 
 /**
- * Shows a full-screen blocking dialog (banner style) with a message and OK button.
+ * Shows a blocking dialog (banner style) with a message and OK button.
  * Used for push notifications of type "notification" so the user must acknowledge.
+ * Extends Activity (not AppCompatActivity) to work with Theme.Translucent.NoTitleBar.
  */
-public class NotificationDialogActivity extends AppCompatActivity {
+public class NotificationDialogActivity extends Activity {
 
     public static final String EXTRA_MESSAGE = "message";
 
