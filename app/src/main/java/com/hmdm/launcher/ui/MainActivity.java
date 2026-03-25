@@ -95,6 +95,7 @@ import com.hmdm.launcher.helper.ConfigUpdater;
 import com.hmdm.launcher.helper.CryptoHelper;
 import com.hmdm.launcher.helper.Initializer;
 import com.hmdm.launcher.helper.SettingsHelper;
+import com.hmdm.launcher.helper.SettingsLaunchGuard;
 import com.hmdm.launcher.json.Application;
 import com.hmdm.launcher.json.DeviceInfo;
 import com.hmdm.launcher.json.RemoteFile;
@@ -294,6 +295,11 @@ public class MainActivity
                 case Const.ACTION_ADMIN_PANEL:
                     openAdminPanel();
                     break;
+
+                case Const.ACTION_ENABLE_SETTINGS:
+                    // Dialogs / Admin "open Settings" broadcast: allow Settings intents for a window
+                    SettingsLaunchGuard.extendTemporaryAccess(context, 30 * 60 * 1000L);
+                    break;
             }
 
         }
@@ -468,6 +474,7 @@ public class MainActivity
         intentFilter.addAction(Const.ACTION_POLICY_VIOLATION);
         intentFilter.addAction(Const.ACTION_EXIT_KIOSK);
         intentFilter.addAction(Const.ACTION_ADMIN_PANEL);
+        intentFilter.addAction(Const.ACTION_ENABLE_SETTINGS);
         LocalBroadcastManager.getInstance(this).registerReceiver(receiver, intentFilter);
     }
 
@@ -579,9 +586,13 @@ public class MainActivity
                 boolean appStarted = false;
                 for (Application application : config.getApplications()) {
                     if (application.isRunAtBoot()) {
-                        if (Boolean.TRUE.equals(config.getBlockSettings())
-                                && Const.SETTINGS_PACKAGE_NAME.equals(application.getPkg())) {
-                            continue;
+                        if (Const.SETTINGS_PACKAGE_NAME.equals(application.getPkg())) {
+                            if (!SettingsLaunchGuard.mayLaunchSystemSettings(MainActivity.this)) {
+                                continue;
+                            }
+                            if (Boolean.TRUE.equals(config.getBlockSettings())) {
+                                continue;
+                            }
                         }
                         // Delay start of each application to 5 sec
                         try {
@@ -1977,10 +1988,15 @@ public class MainActivity
         while (applicationsForRun.size() > 0) {
             final Application application = applicationsForRun.get(0);
             applicationsForRun.remove(0);
-            if (Boolean.TRUE.equals(settingsHelper.getConfig().getBlockSettings())
-                    && Const.SETTINGS_PACKAGE_NAME.equals(application.getPkg())) {
-                pause += PAUSE_BETWEEN_AUTORUNS_SEC;
-                continue;
+            if (Const.SETTINGS_PACKAGE_NAME.equals(application.getPkg())) {
+                if (!SettingsLaunchGuard.mayLaunchSystemSettings(MainActivity.this)) {
+                    pause += PAUSE_BETWEEN_AUTORUNS_SEC;
+                    continue;
+                }
+                if (Boolean.TRUE.equals(settingsHelper.getConfig().getBlockSettings())) {
+                    pause += PAUSE_BETWEEN_AUTORUNS_SEC;
+                    continue;
+                }
             }
             handler.postDelayed(new Runnable() {
                 @Override

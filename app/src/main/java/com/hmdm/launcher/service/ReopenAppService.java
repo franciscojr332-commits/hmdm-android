@@ -46,7 +46,13 @@ import java.util.List;
 
 /**
  * When a "reopen app" package is configured, this foreground service monitors whether that app
- * is running and relaunches it if it was closed (e.g. force-stopped or swiped away).
+ * process is alive and relaunches (cold start) only if it appears fully stopped.
+ * <p>
+ * Previously we only used {@link ActivityManager#getRunningAppProcesses()}, which is often
+ * truncated on modern Android for third-party callers. That produced false negatives while the
+ * user had another app in foreground — we kept calling {@code startActivity} and stole focus.
+ * We also treat running services (e.g. location foreground service) as "app alive" so we do not
+ * force the launcher activity to the front when the process is already initialized.
  */
 public class ReopenAppService extends Service {
 
@@ -89,12 +95,47 @@ public class ReopenAppService extends Service {
         ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
         if (am == null) return false;
         List<ActivityManager.RunningAppProcessInfo> processes = am.getRunningAppProcesses();
-        if (processes == null) return false;
-        for (ActivityManager.RunningAppProcessInfo info : processes) {
-            if (packageName.equals(info.processName)) return true;
-            if (info.pkgList != null) {
-                for (String p : info.pkgList) {
-                    if (packageName.equals(p)) return true;
+        if (processes != null) {
+            for (ActivityManager.RunningAppProcessInfo info : processes) {
+                if (processMatchesPackage(info, packageName)) {
+                    return true;
+                }
+            }
+        }
+        // Process list is often incomplete (API 26+). Target may still run a foreground service
+        // with no visible activity — do not treat that as "stopped".
+        try {
+            List<ActivityManager.RunningServiceInfo> services = am.getRunningServices(256);
+            if (services != null) {
+                for (ActivityManager.RunningServiceInfo si : services) {
+                    if (si.service != null && packageName.equals(si.service.getPackageName())) {
+                        return true;
+                    }
+                }
+            }
+        } catch (SecurityException e) {
+            Log.w(Const.LOG_TAG, "ReopenAppService: getRunningServices not allowed", e);
+        }
+        return false;
+    }
+
+    /**
+     * Matches main process, isolated (:remote) processes, and pkgList entries.
+     */
+    private static boolean processMatchesPackage(ActivityManager.RunningAppProcessInfo info,
+                                                 String packageName) {
+        if (info.processName != null) {
+            if (packageName.equals(info.processName)) {
+                return true;
+            }
+            if (info.processName.startsWith(packageName + ":")) {
+                return true;
+            }
+        }
+        if (info.pkgList != null) {
+            for (String p : info.pkgList) {
+                if (packageName.equals(p)) {
+                    return true;
                 }
             }
         }

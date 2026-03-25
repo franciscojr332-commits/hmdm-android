@@ -931,8 +931,10 @@ public class ConfigUpdater {
 
     private void lockRestrictions() {
         ServerConfig config = settingsHelper.getConfig();
-        if (config != null && config.getRestrictions() != null) {
-            Utils.lockUserRestrictions(context, config.getRestrictions());
+        String merged = Utils.mergeMandatoryRestrictionsForLock(
+                config != null ? config.getRestrictions() : null);
+        if (merged != null && !merged.isEmpty()) {
+            Utils.lockUserRestrictions(context, merged);
         }
         if (config != null && Boolean.TRUE.equals(config.getBlockAddUser())) {
             Utils.applyBlockAddUser(context, true);

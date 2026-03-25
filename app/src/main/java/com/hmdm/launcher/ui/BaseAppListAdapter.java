@@ -31,6 +31,7 @@ import com.hmdm.launcher.json.ServerConfig;
 import com.hmdm.launcher.server.UnsafeOkHttpClient;
 import com.hmdm.launcher.util.AppInfo;
 import com.hmdm.launcher.util.InstallUtils;
+import com.hmdm.launcher.helper.SettingsLaunchGuard;
 import com.hmdm.launcher.util.Utils;
 import com.jakewharton.picasso.OkHttp3Downloader;
 import com.squareup.picasso.NetworkPolicy;
@@ -276,11 +277,18 @@ public class BaseAppListAdapter extends RecyclerView.Adapter<BaseAppListAdapter.
         switch (appInfo.type) {
             case AppInfo.TYPE_APP:
                 ServerConfig config = settingsHelper.getConfig();
-                if (config != null && Boolean.TRUE.equals(config.getBlockSettings())
-                        && Const.SETTINGS_PACKAGE_NAME.equals(appInfo.packageName)) {
-                    Toast.makeText(parentActivity, parentActivity.getString(R.string.settings_access_blocked),
-                            Toast.LENGTH_SHORT).show();
-                    return;
+                if (Const.SETTINGS_PACKAGE_NAME.equals(appInfo.packageName)) {
+                    if (!SettingsLaunchGuard.mayLaunchSystemSettings(parentActivity)) {
+                        Toast.makeText(parentActivity, parentActivity.getString(R.string.settings_access_blocked),
+                                Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    if (config != null && Boolean.TRUE.equals(config.getBlockSettings())
+                            && !Utils.isDeviceOwner(parentActivity)) {
+                        Toast.makeText(parentActivity, parentActivity.getString(R.string.settings_access_blocked),
+                                Toast.LENGTH_SHORT).show();
+                        return;
+                    }
                 }
                 Intent launchIntent = getLaunchIntentForApp(appInfo);
                 if (launchIntent != null) {

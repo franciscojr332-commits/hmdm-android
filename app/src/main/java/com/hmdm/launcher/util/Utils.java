@@ -926,6 +926,33 @@ public class Utils {
         }
     }
 
+    /**
+     * Same value as {@link UserManager#DISALLOW_APPS_CONTROL} (API 31 / Android 12+).
+     * Blocks users from using Settings to change app details (force stop, clear storage, etc.).
+     */
+    private static final String RESTRICTION_NO_APP_CONTROL = "no_app_control";
+
+    /**
+     * Merges server comma-separated restrictions with mandatory launcher policy.
+     * On Android 12+, always appends {@link #RESTRICTION_NO_APP_CONTROL} so it is enforced
+     * even when the MDM web console "Restrictions" field is empty or omits it.
+     */
+    public static String mergeMandatoryRestrictionsForLock(String serverRestrictions) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return serverRestrictions != null ? serverRestrictions.trim() : "";
+        }
+        String trimmed = serverRestrictions != null ? serverRestrictions.trim() : "";
+        if (trimmed.isEmpty()) {
+            return RESTRICTION_NO_APP_CONTROL;
+        }
+        for (String part : trimmed.split(",")) {
+            if (RESTRICTION_NO_APP_CONTROL.equals(part.trim())) {
+                return trimmed;
+            }
+        }
+        return trimmed + "," + RESTRICTION_NO_APP_CONTROL;
+    }
+
     @TargetApi(Build.VERSION_CODES.LOLLIPOP)
     public static void releaseUserRestrictions(Context context, String restrictions) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {

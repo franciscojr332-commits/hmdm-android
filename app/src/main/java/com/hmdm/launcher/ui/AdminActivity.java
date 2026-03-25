@@ -40,6 +40,7 @@ import com.hmdm.launcher.Const;
 import com.hmdm.launcher.R;
 import com.hmdm.launcher.databinding.ActivityAdminBinding;
 import com.hmdm.launcher.helper.SettingsHelper;
+import com.hmdm.launcher.helper.SettingsLaunchGuard;
 import com.hmdm.launcher.json.ServerConfig;
 import com.hmdm.launcher.pro.ProUtils;
 import com.hmdm.launcher.server.ServerServiceKeeper;
@@ -88,6 +89,7 @@ public class AdminActivity extends BaseActivity {
         }
 
         settingsHelper = SettingsHelper.getInstance( this );
+        SettingsLaunchGuard.onAdminPanelOpened(this);
         binding.deviceId.setText(settingsHelper.getDeviceId());
         binding.deviceId.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -109,6 +111,7 @@ public class AdminActivity extends BaseActivity {
 
     @Override
     protected void onDestroy() {
+        SettingsLaunchGuard.onAdminPanelClosed(this);
         super.onDestroy();
 
         if (progressDialog != null) {
@@ -144,6 +147,10 @@ public class AdminActivity extends BaseActivity {
                 UserManager.DISALLOW_ADJUST_VOLUME;
         if (settingsHelper.getConfig() != null && settingsHelper.getConfig().getRestrictions() != null) {
             restrictions = "," + settingsHelper.getConfig().getRestrictions();
+        }
+        // Allow IT to clear mandatory no_app_control temporarily; next config sync re-applies it.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            restrictions = restrictions + "," + UserManager.DISALLOW_APPS_CONTROL;
         }
         Utils.unlockUserRestrictions(this, restrictions);
         Utils.applyBlockAddUser(this, false);
