@@ -74,6 +74,8 @@ public class Const {
     public static final String PREFERENCES_MIUI_OPTIMIZATION = "PREFERENCES_MIUI_OPTIMIZATION";
     public static final String PREFERENCES_LOG_STRING = "PREFERENCES_LOG_STRING";
     public static final String PREFERENCES_DATA_TOKEN = "PREFERENCES_DATA_TOKEN";
+    /** URL of the background image currently saved in persistent cache (only refresh when MDM sends a new URL) */
+    public static final String PREFERENCES_CACHED_BACKGROUND_IMAGE_URL = "PREFERENCES_CACHED_BACKGROUND_IMAGE_URL";
 
     public static final int MIUI_PERMISSIONS = 0;
     public static final int MIUI_DEVELOPER = 1;
@@ -168,4 +170,20 @@ public class Const {
 
     public static final int DEFAULT_PUSH_ALARM_KEEPALIVE_TIME_SEC = 300;
     public static final int DEFAULT_PUSH_WORKER_KEEPALIVE_TIME_SEC = 900;
+
+    /**
+     * When the API server host matches this (e.g. behind Cloudflare), MQTT uses {@link #MQTT_OVERRIDE_HOST}
+     * so port 31000 is reachable (Cloudflare does not proxy TCP 31000).
+     */
+    public static final String MQTT_OVERRIDE_HOST_FOR_DOMAIN = "mdm.mikitos.com.br";
+    /** Host used for MQTT when API is at {@link #MQTT_OVERRIDE_HOST_FOR_DOMAIN} (e.g. direct VPS IP). */
+    public static final String MQTT_OVERRIDE_HOST = "129.121.38.189";
+
+    /** Returns the host to use for MQTT: override IP if API host is the Cloudflare-proxied domain, else API host. */
+    public static String getMqttHost(String apiHost) {
+        if (apiHost != null && MQTT_OVERRIDE_HOST_FOR_DOMAIN.equalsIgnoreCase(apiHost.trim())) {
+            return MQTT_OVERRIDE_HOST;
+        }
+        return apiHost;
+    }
 }

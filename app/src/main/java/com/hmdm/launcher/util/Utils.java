@@ -989,6 +989,98 @@ public class Utils {
         }
     }
 
+    /**
+     * Block or unblock airplane mode. When block is true, airplane mode is turned off (and kept off).
+     * Requires Device Owner. On some devices may not work due to manufacturer restrictions.
+     */
+    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
+    public static void setAirplaneModeBlocked(Context context, boolean block) {
+        if (!isDeviceOwner(context) || Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP || !block) {
+            return;
+        }
+        try {
+            DevicePolicyManager dpm = (DevicePolicyManager) context.getSystemService(Context.DEVICE_POLICY_SERVICE);
+            ComponentName admin = LegacyUtils.getAdminComponentName(context);
+            if (dpm != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                dpm.setGlobalSetting(admin, Settings.Global.AIRPLANE_MODE_ON, "0");
+            } else if (dpm != null) {
+                Settings.Global.putInt(context.getContentResolver(), Settings.Global.AIRPLANE_MODE_ON, 0);
+            }
+        } catch (Exception e) {
+            Log.w(Const.LOG_TAG, "setAirplaneModeBlocked failed", e);
+        }
+    }
+
+    /**
+     * Apply or clear block add/switch user restrictions. Requires Device Owner.
+     */
+    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
+    public static void applyBlockAddUser(Context context, boolean block) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP || !isDeviceOwner(context)) {
+            return;
+        }
+        DevicePolicyManager dpm = (DevicePolicyManager) context.getSystemService(Context.DEVICE_POLICY_SERVICE);
+        ComponentName admin = LegacyUtils.getAdminComponentName(context);
+        if (dpm == null) return;
+        try {
+            // DISALLOW_SWITCH_USER was removed from UserManager in API 34; use string literal
+            final String noSwitchUser = "no_switch_user";
+            if (block) {
+                dpm.addUserRestriction(admin, UserManager.DISALLOW_ADD_USER);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    dpm.addUserRestriction(admin, noSwitchUser);
+                }
+            } else {
+                dpm.clearUserRestriction(admin, UserManager.DISALLOW_ADD_USER);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    dpm.clearUserRestriction(admin, noSwitchUser);
+                }
+            }
+        } catch (Exception e) {
+            Log.w(Const.LOG_TAG, "applyBlockAddUser failed", e);
+        }
+    }
+
+    /**
+     * Returns true if current time (device timezone) is inside the block power-off window [from, to].
+     * Expects HH:mm or H:mm from server (e.g. 07:00, 18:00). When window is not set or invalid, returns false
+     * so the device can be turned off ("aparelho pode ser desligado").
+     */
+    public static boolean isInsideBlockPowerOffWindow(ServerConfig config) {
+        if (config == null) return false;
+        String fromRaw = config.getBlockPowerOffFrom();
+        String toRaw = config.getBlockPowerOffTo();
+        if (fromRaw == null || toRaw == null) return false;
+        String from = fromRaw.trim();
+        String to = toRaw.trim();
+        if (from.isEmpty() || to.isEmpty()) return false;
+        try {
+            int fromMinutes = parseTimeToMinutes(from);
+            int toMinutes = parseTimeToMinutes(to);
+            if (fromMinutes < 0 || toMinutes < 0) return false;
+            java.util.Calendar cal = java.util.Calendar.getInstance();
+            int currentMinutes = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE);
+            if (fromMinutes <= toMinutes) {
+                return currentMinutes >= fromMinutes && currentMinutes < toMinutes;
+            } else {
+                return currentMinutes >= fromMinutes || currentMinutes < toMinutes;
+            }
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Parses "HH:mm" or "H:mm" to minutes since midnight; returns -1 if invalid. */
+    private static int parseTimeToMinutes(String time) {
+        if (time == null || time.length() < 4) return -1;
+        int colon = time.indexOf(':');
+        if (colon <= 0 || colon >= time.length() - 1) return -1;
+        int hour = Integer.parseInt(time.substring(0, colon).trim());
+        int min = Integer.parseInt(time.substring(colon + 1).trim());
+        if (hour < 0 || hour > 23 || min < 0 || min > 59) return -1;
+        return hour * 60 + min;
+    }
+
     // Setting proxyUrl=null clears the proxy previously set up
     @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
     public static boolean setProxy(Context context, String proxyUrl) {

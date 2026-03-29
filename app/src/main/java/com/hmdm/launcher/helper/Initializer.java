@@ -97,13 +97,14 @@ public class Initializer {
                     || pushOptions.equals(ServerConfig.PUSH_OPTIONS_MQTT_ALARM)) {
                 try {
                     URL url = new URL(settingsHelper.getBaseUrl());
+                    String mqttHost = Const.getMqttHost(url.getHost());
                     // Broadcast receivers are not allowed to bind to services
                     // Therefore we start a service, and it binds to itself using
                     // PushNotificationMqttWrapper.getInstance().connect()
                     Intent serviceStartIntent = new Intent();
                     serviceStartIntent.setClassName(context, MqttAndroidClient.SERVICE_NAME);
                     serviceStartIntent.putExtra(MqttAndroidClient.EXTRA_START_AT_BOOT, true);
-                    serviceStartIntent.putExtra(MqttAndroidClient.EXTRA_DOMAIN, url.getHost());
+                    serviceStartIntent.putExtra(MqttAndroidClient.EXTRA_DOMAIN, mqttHost);
                     serviceStartIntent.putExtra(MqttAndroidClient.EXTRA_KEEPALIVE_TIME, keepaliveTime);
                     serviceStartIntent.putExtra(MqttAndroidClient.EXTRA_PUSH_OPTIONS, pushOptions);
                     serviceStartIntent.putExtra(MqttAndroidClient.EXTRA_DEVICE_ID, settingsHelper.getDeviceId());
@@ -290,6 +291,10 @@ public class Initializer {
         }
 
         Utils.disableScreenshots(config.isDisableScreenshots(), context);
+
+        if (Boolean.TRUE.equals(config.getBlockAirplaneMode()) && Utils.isDeviceOwner(context)) {
+            Utils.setAirplaneModeBlocked(context, true);
+        }
     }
 
 }

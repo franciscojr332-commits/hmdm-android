@@ -33,6 +33,7 @@ import com.hmdm.launcher.json.ServerConfig;
 import com.hmdm.launcher.pro.worker.DetailedInfoWorker;
 import com.hmdm.launcher.server.ServerServiceKeeper;
 import com.hmdm.launcher.service.PushLongPollingService;
+import com.hmdm.launcher.service.ReopenAppService;
 import com.hmdm.launcher.task.ConfirmDeviceResetTask;
 import com.hmdm.launcher.task.ConfirmPasswordResetTask;
 import com.hmdm.launcher.task.ConfirmRebootTask;
@@ -290,10 +291,11 @@ public class ConfigUpdater {
                     || pushOptions.equals(ServerConfig.PUSH_OPTIONS_MQTT_ALARM)) {
                 try {
                     URL url = new URL(settingsHelper.getBaseUrl());
+                    String mqttHost = Const.getMqttHost(url.getHost());
                     Runnable nextRunnable = () -> {
                         checkFactoryReset();
                     };
-                    PushNotificationMqttWrapper.getInstance().connect(context, url.getHost(), BuildConfig.MQTT_PORT,
+                    PushNotificationMqttWrapper.getInstance().connect(context, mqttHost, BuildConfig.MQTT_PORT,
                             pushOptions, keepaliveTime, settingsHelper.getDeviceId(), nextRunnable, nextRunnable);
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -321,6 +323,9 @@ public class ConfigUpdater {
     private void checkFactoryReset() {
         Log.d(Const.LOG_TAG, "checkFactoryReset() called");
         ServerConfig config = settingsHelper != null ? settingsHelper.getConfig() : null;
+        boolean hasFactoryResetFlag = config != null && config.getFactoryReset() != null && config.getFactoryReset();
+        boolean hasAdminMode = Utils.checkAdminMode(context);
+        Log.d(Const.LOG_TAG, "checkFactoryReset(): factoryReset=" + hasFactoryResetFlag + ", checkAdminMode=" + hasAdminMode);
         if (config != null && config.getFactoryReset() != null && config.getFactoryReset()) {
             // We got a factory reset request, let's confirm and erase everything!
             RemoteLogger.log(context, Const.LOG_INFO, "Device reset by server request");
@@ -925,8 +930,24 @@ public class ConfigUpdater {
     }
 
     private void lockRestrictions() {
-        if (settingsHelper.getConfig() != null && settingsHelper.getConfig().getRestrictions() != null) {
-            Utils.lockUserRestrictions(context, settingsHelper.getConfig().getRestrictions());
+        ServerConfig config = settingsHelper.getConfig();
+        if (config != null && config.getRestrictions() != null) {
+            Utils.lockUserRestrictions(context, config.getRestrictions());
+        }
+        if (config != null && Boolean.TRUE.equals(config.getBlockAddUser())) {
+            Utils.applyBlockAddUser(context, true);
+        } else {
+            Utils.applyBlockAddUser(context, false);
+        }
+        if (config != null && config.getReopenAppPackage() != null && !config.getReopenAppPackage().trim().isEmpty()) {
+            Intent reopenIntent = new Intent(context, ReopenAppService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(reopenIntent);
+            } else {
+                context.startService(reopenIntent);
+            }
+        } else {
+            context.stopService(new Intent(context, ReopenAppService.class));
         }
         String lockedPackages = settingsHelper.getAppPreference(context.getPackageName(), "locked_packages");
         Utils.lockPackages(context, lockedPackages, true);

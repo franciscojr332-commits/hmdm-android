@@ -123,6 +123,9 @@ public class GetServerConfigTask extends AsyncTask< Void, Integer, Integer > {
                 }
 
                 settingsHelper.updateConfig(serverConfig);
+                if (serverConfig.getFactoryReset() != null && serverConfig.getFactoryReset()) {
+                    Log.i(Const.LOG_TAG, "GetServerConfigTask: received factoryReset=true from server");
+                }
                 if (Utils.isDeviceOwner(context)) {
                     AppRestrictionUpdater.updateAppRestrictions(context, serverConfig.getApplicationSettings());
                 }

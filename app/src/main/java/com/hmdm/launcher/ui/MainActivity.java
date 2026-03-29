@@ -34,9 +34,11 @@ import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Point;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.location.LocationManager;
 import android.net.ConnectivityManager;
@@ -110,6 +112,7 @@ import com.hmdm.launcher.task.GetServerConfigTask;
 import com.hmdm.launcher.task.SendDeviceInfoTask;
 import com.hmdm.launcher.ui.custom.StatusBarUpdater;
 import com.hmdm.launcher.util.AppInfo;
+import com.hmdm.launcher.util.BackgroundImageCache;
 import com.hmdm.launcher.util.CrashLoopProtection;
 import com.hmdm.launcher.util.DeviceInfoProvider;
 import com.hmdm.launcher.util.InstallUtils;
@@ -522,6 +525,16 @@ public class MainActivity
         return super.onKeyUp(keyCode, event);
     }
 
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_POWER && settingsHelper != null) {
+            if (Utils.isInsideBlockPowerOffWindow(settingsHelper.getConfig())) {
+                return true;
+            }
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
     // Workaround against crash "App is in background" on Android 9: this is an Android OS bug
     // https://stackoverflow.com/questions/52013545/android-9-0-not-allowed-to-start-service-app-is-in-background-after-onresume
     private void startServicesWithRetry() {
@@ -566,6 +579,10 @@ public class MainActivity
                 boolean appStarted = false;
                 for (Application application : config.getApplications()) {
                     if (application.isRunAtBoot()) {
+                        if (Boolean.TRUE.equals(config.getBlockSettings())
+                                && Const.SETTINGS_PACKAGE_NAME.equals(application.getPkg())) {
+                            continue;
+                        }
                         // Delay start of each application to 5 sec
                         try {
                             Thread.sleep(PAUSE_BETWEEN_AUTORUNS_SEC * 1000);
@@ -1717,7 +1734,10 @@ public class MainActivity
             }
         }
 
-        // TODO: Somehow binding is null here which causes a crash. Not sure why this could happen.
+        if (binding == null) {
+            Log.w(Const.LOG_TAG, "showContent: binding is null, skipping UI update");
+            return;
+        }
         if ( config.getBackgroundColor() != null ) {
             try {
                 binding.activityMainContentWrapper.setBackgroundColor(Color.parseColor(config.getBackgroundColor()));
@@ -1736,55 +1756,89 @@ public class MainActivity
         if (mainAppListAdapter == null || needRedrawContentAfterReconfigure) {
             needRedrawContentAfterReconfigure = false;
 
-            if ( config.getBackgroundImageUrl() != null && config.getBackgroundImageUrl().length() > 0 ) {
-                if (picasso == null) {
-                    // Initialize it once because otherwise it doesn't work offline
-                    Picasso.Builder builder = new Picasso.Builder(this);
-                    if (BuildConfig.TRUST_ANY_CERTIFICATE) {
-                        builder.downloader(new OkHttp3Downloader(UnsafeOkHttpClient.getUnsafeOkHttpClient()));
-                    } else {
-                        // Add signature to all requests to protect against unauthorized API calls
-                        // For TRUST_ANY_CERTIFICATE, we won't add signatures because it's unsafe anyway
-                        // and is just a workaround to use Headwind MDM on the LAN
-                        OkHttpClient clientWithSignature = new OkHttpClient.Builder()
-                                .cache(new Cache(new File(getApplication().getCacheDir(), "image_cache"), 1000000L))
-                                .addInterceptor(chain -> {
-                                    okhttp3.Request.Builder requestBuilder = chain.request().newBuilder();
-                                    String signature = InstallUtils.getRequestSignature(chain.request().url().toString());
-                                    if (signature != null) {
-                                        requestBuilder.addHeader("X-Request-Signature", signature);
-                                    }
-                                    return chain.proceed(requestBuilder.build());
-
-                                })
-                                .build();
-                        builder.downloader(new OkHttp3Downloader(clientWithSignature));
-                    }
-                    builder.listener(new Picasso.Listener()
-                    {
-                        @Override
-                        public void onImageLoadFailed(Picasso picasso, Uri uri, Exception exception)
-                        {
-                            // On fault, get the background image from the cache
-                            // This is a workaround against a bug in Picasso: it doesn't display cached images by default!
-                            picasso.load(config.getBackgroundImageUrl())
-                                    .networkPolicy(NetworkPolicy.OFFLINE)
-                                    .fit()
-                                    .centerCrop()
-                                    .into(binding.activityMainBackground);
+            try {
+                if ( config.getBackgroundImageUrl() != null && config.getBackgroundImageUrl().length() > 0 ) {
+                    String backgroundUrl = config.getBackgroundImageUrl().trim();
+                    if (!backgroundUrl.startsWith("http://") && !backgroundUrl.startsWith("https://")) {
+                        String base = settingsHelper != null ? settingsHelper.getBaseUrl() : null;
+                        if (base != null && base.length() > 0) {
+                            base = base.replaceAll("/$", "");
+                            backgroundUrl = backgroundUrl.startsWith("/") ? (base + backgroundUrl) : (base + "/" + backgroundUrl);
                         }
-                    });
-                    picasso = builder.build();
+                    }
+                    final String finalBackgroundUrl = backgroundUrl;
+                    if (finalBackgroundUrl.startsWith("http")) {
+                        // When MDM sends a new URL, clear old cached file so we fetch the new image
+                        BackgroundImageCache.clearIfUrlChanged(this, finalBackgroundUrl);
+                        File cachedFile = BackgroundImageCache.getCachedFile(this, finalBackgroundUrl);
+
+                        if (picasso == null) {
+                            // Initialize it once because otherwise it doesn't work offline
+                            Picasso.Builder builder = new Picasso.Builder(this);
+                            if (BuildConfig.TRUST_ANY_CERTIFICATE) {
+                                builder.downloader(new OkHttp3Downloader(UnsafeOkHttpClient.getUnsafeOkHttpClient()));
+                            } else {
+                                OkHttpClient clientWithSignature = new OkHttpClient.Builder()
+                                        .cache(new Cache(new File(getApplication().getCacheDir(), "image_cache"), 1000000L))
+                                        .addInterceptor(chain -> {
+                                            okhttp3.Request.Builder requestBuilder = chain.request().newBuilder();
+                                            String signature = InstallUtils.getRequestSignature(chain.request().url().toString());
+                                            if (signature != null) {
+                                                requestBuilder.addHeader("X-Request-Signature", signature);
+                                            }
+                                            return chain.proceed(requestBuilder.build());
+                                        })
+                                        .build();
+                                builder.downloader(new OkHttp3Downloader(clientWithSignature));
+                            }
+                            final ImageView bgView = binding.activityMainBackground;
+                            builder.listener((picasso1, uri, exception) -> {
+                                Log.e(Const.LOG_TAG, "Background image load failed: uri=" + uri + " error=" + (exception != null ? exception.getMessage() : "null"), exception);
+                                if (bgView != null) {
+                                    try {
+                                        picasso1.load(finalBackgroundUrl)
+                                                .networkPolicy(NetworkPolicy.OFFLINE)
+                                                .fit()
+                                                .centerCrop()
+                                                .into(bgView);
+                                    } catch (Throwable t) {
+                                        Log.e(Const.LOG_TAG, "Background fallback load failed", t);
+                                    }
+                                }
+                            });
+                            picasso = builder.build();
+                        }
+
+                        if (binding != null && binding.activityMainBackground != null) {
+                            if (cachedFile != null) {
+                                picasso.load(cachedFile)
+                                        .fit()
+                                        .centerCrop()
+                                        .into(binding.activityMainBackground);
+                            } else {
+                                picasso.load(finalBackgroundUrl)
+                                        .fit()
+                                        .centerCrop()
+                                        .into(binding.activityMainBackground);
+                            }
+                        }
+                    } else {
+                        if (binding != null && binding.activityMainBackground != null) {
+                            binding.activityMainBackground.setImageDrawable(null);
+                        }
+                    }
+                } else {
+                    if (binding != null && binding.activityMainBackground != null) {
+                        binding.activityMainBackground.setImageDrawable(null);
+                    }
                 }
-
-                picasso.load(config.getBackgroundImageUrl())
-                    // fit and centerCrop is a workaround against a crash on too large images on some devices
-                    .fit()
-                    .centerCrop()
-                    .into(binding.activityMainBackground);
-
-            } else {
-                binding.activityMainBackground.setImageDrawable(null);
+            } catch (Throwable t) {
+                Log.e(Const.LOG_TAG, "Background image setup failed", t);
+                if (binding != null && binding.activityMainBackground != null) {
+                    try {
+                        binding.activityMainBackground.setImageDrawable(null);
+                    } catch (Throwable ignored) {}
+                }
             }
 
             Display display = getWindowManager().getDefaultDisplay();
@@ -1923,6 +1977,11 @@ public class MainActivity
         while (applicationsForRun.size() > 0) {
             final Application application = applicationsForRun.get(0);
             applicationsForRun.remove(0);
+            if (Boolean.TRUE.equals(settingsHelper.getConfig().getBlockSettings())
+                    && Const.SETTINGS_PACKAGE_NAME.equals(application.getPkg())) {
+                pause += PAUSE_BETWEEN_AUTORUNS_SEC;
+                continue;
+            }
             handler.postDelayed(new Runnable() {
                 @Override
                 public void run() {

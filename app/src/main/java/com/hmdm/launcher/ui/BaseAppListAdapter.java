@@ -275,6 +275,13 @@ public class BaseAppListAdapter extends RecyclerView.Adapter<BaseAppListAdapter.
     protected void chooseApp(AppInfo appInfo) {
         switch (appInfo.type) {
             case AppInfo.TYPE_APP:
+                ServerConfig config = settingsHelper.getConfig();
+                if (config != null && Boolean.TRUE.equals(config.getBlockSettings())
+                        && Const.SETTINGS_PACKAGE_NAME.equals(appInfo.packageName)) {
+                    Toast.makeText(parentActivity, parentActivity.getString(R.string.settings_access_blocked),
+                            Toast.LENGTH_SHORT).show();
+                    return;
+                }
                 Intent launchIntent = getLaunchIntentForApp(appInfo);
                 if (launchIntent != null) {
                     // These magic flags are found in the source code of the default Android launcher
