@@ -25,6 +25,9 @@ import org.json.JSONObject;
 
 @JsonIgnoreProperties( ignoreUnknown = true )
 public class PushMessage {
+    // HMDM-EVOLUTION F1: server message id for tracking + future F2 ACK protocol.
+    // Backward compatible: server before F1 omits this field, Jackson leaves it null.
+    private Integer id;
     private String messageType;
     private String payload;
 
@@ -47,6 +50,14 @@ public class PushMessage {
     public static final String TYPE_CLEAR_APP_DATA = "clearAppData";
     /** Show a notification/message to the user (Toast). Payload: {"text": "message"} */
     public static final String TYPE_NOTIFICATION = "notification";
+
+    public Integer getId() {
+        return id;
+    }
+
+    public void setId(Integer id) {
+        this.id = id;
+    }
 
     public String getMessageType() {
         return messageType;
