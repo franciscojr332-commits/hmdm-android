@@ -24,9 +24,10 @@ import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 
 public class DatabaseHelper extends SQLiteOpenHelper {
-    // Next version should be 10 and versions must be increased by 10
+    // Next version should be 20 and versions must be increased by 10
     // to enable custom database changes
-    private static final int DATABASE_VERSION = 10;
+    // F2: bumped to 20 to add ack_outbox table
+    private static final int DATABASE_VERSION = 20;
     private static final String DATABASE_NAME = "hmdm.launcher.sqlite";
 
     private static DatabaseHelper sInstance;
@@ -52,6 +53,9 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             db.execSQL(RemoteFileTable.getCreateTableSql());
             db.execSQL(LocationTable.getCreateTableSql());
             db.execSQL(DownloadTable.getCreateTableSql());
+            // HMDM-EVOLUTION F2: ACK outbox
+            db.execSQL(AckOutboxTable.getCreateTableSql());
+            db.execSQL(AckOutboxTable.getCreateIndexSql());
             db.setTransactionSuccessful();
         }
         catch ( Exception e ) {
@@ -81,6 +85,11 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             }
             if (oldVersion < 10 && newVersion >= 10) {
                 db.execSQL(DownloadTable.getCreateTableSql());
+            }
+            if (oldVersion < 20 && newVersion >= 20) {
+                // HMDM-EVOLUTION F2: ACK outbox table
+                db.execSQL(AckOutboxTable.getCreateTableSql());
+                db.execSQL(AckOutboxTable.getCreateIndexSql());
             }
             db.setTransactionSuccessful();
         } catch ( Exception e ) {

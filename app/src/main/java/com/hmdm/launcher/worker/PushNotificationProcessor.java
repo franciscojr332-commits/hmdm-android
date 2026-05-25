@@ -34,6 +34,8 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import com.hmdm.launcher.BuildConfig;
 import com.hmdm.launcher.Const;
+import com.hmdm.launcher.ack.AckExecutionRequest;
+import com.hmdm.launcher.ack.AckQueue;
 import com.hmdm.launcher.db.DatabaseHelper;
 import com.hmdm.launcher.db.DownloadTable;
 import com.hmdm.launcher.helper.ConfigUpdater;
@@ -58,89 +60,106 @@ import java.util.List;
 import java.util.concurrent.Executors;
 
 public class PushNotificationProcessor {
+
+    /**
+     * Entry point: dispatcher + ACK pipeline.
+     * F2 changes:
+     *  - Each handler returns ExecutionResult (ok / fail with code+message).
+     *  - AckQueue receives execution ACK after handler completes.
+     *  - Delivery ACK is sent by caller (PushLongPollingService) right after receipt.
+     */
     public static void process(PushMessage message, Context context) {
-        RemoteLogger.log(context, Const.LOG_INFO, "Got Push Message, type " + message.getMessageType());
-        if (message.getMessageType().equals(PushMessage.TYPE_CONFIG_UPDATED)) {
-            // Update local configuration
+        final int messageId = message.getId() != null ? message.getId() : -1;
+        RemoteLogger.log(context, Const.LOG_INFO,
+                "Got Push Message id=" + messageId + " type=" + message.getMessageType());
+
+        String type = message.getMessageType();
+
+        // Synchronous-ish handlers (Android API itself queues startActivity/broadcast).
+        // We treat them as success immediately after dispatch.
+        if (PushMessage.TYPE_CONFIG_UPDATED.equals(type)) {
             ConfigUpdater.notifyConfigUpdate(context);
-            // The configUpdated should be broadcasted after the configuration update is completed
+            sendExecAck(context, messageId, ExecutionResult.ok());
             return;
-        } else if (message.getMessageType().equals(PushMessage.TYPE_RUN_APP)) {
-            // Run application
+        } else if (PushMessage.TYPE_RUN_APP.equals(type)) {
             runApplication(context, message.getPayloadJSON());
-            // Do not broadcast this message to other apps
+            sendExecAck(context, messageId, ExecutionResult.ok());
             return;
-        } else if (message.getMessageType().equals(PushMessage.TYPE_BROADCAST)) {
-            // Send broadcast
+        } else if (PushMessage.TYPE_BROADCAST.equals(type)) {
             sendBroadcast(context, message.getPayloadJSON());
+            sendExecAck(context, messageId, ExecutionResult.ok());
             return;
-        } else if (message.getMessageType().equals(PushMessage.TYPE_UNINSTALL_APP)) {
-            // Uninstall application
-            AsyncTask.execute(() -> uninstallApplication(context, message.getPayloadJSON()));
+        } else if (PushMessage.TYPE_PERMISSIVE_MODE.equals(type)) {
+            LocalBroadcastManager.getInstance(context).sendBroadcast(new Intent(Const.ACTION_PERMISSIVE_MODE));
+            sendExecAck(context, messageId, ExecutionResult.ok());
             return;
-        } else if (message.getMessageType().equals(PushMessage.TYPE_DELETE_FILE)) {
-            // Delete file
-            AsyncTask.execute(() -> deleteFile(context, message.getPayloadJSON()));
+        } else if (PushMessage.TYPE_EXIT_KIOSK.equals(type)) {
+            LocalBroadcastManager.getInstance(context).sendBroadcast(new Intent(Const.ACTION_EXIT_KIOSK));
+            sendExecAck(context, messageId, ExecutionResult.ok());
             return;
-        } else if (message.getMessageType().equals(PushMessage.TYPE_DELETE_DIR)) {
-            // Delete directory recursively
-            AsyncTask.execute(() -> deleteDir(context, message.getPayloadJSON()));
+        } else if (PushMessage.TYPE_ADMIN_PANEL.equals(type)) {
+            LocalBroadcastManager.getInstance(context).sendBroadcast(new Intent(Const.ACTION_ADMIN_PANEL));
+            sendExecAck(context, messageId, ExecutionResult.ok());
             return;
-        } else if (message.getMessageType().equals(PushMessage.TYPE_PURGE_DIR)) {
-            // Purge directory (delete all files recursively)
-            AsyncTask.execute(() -> purgeDir(context, message.getPayloadJSON()));
-            return;
-        } else if (message.getMessageType().equals(PushMessage.TYPE_PERMISSIVE_MODE)) {
-            // Turn on permissive mode
-            LocalBroadcastManager.getInstance(context).
-                    sendBroadcast(new Intent(Const.ACTION_PERMISSIVE_MODE));
-            return;
-        } else if (message.getMessageType().equals(PushMessage.TYPE_RUN_COMMAND)) {
-            // Run a command-line script
-            AsyncTask.execute(() -> runCommand(context, message.getPayloadJSON()));
-            return;
-        } else if (message.getMessageType().equals(PushMessage.TYPE_REBOOT)) {
-            // Reboot a device
-            AsyncTask.execute(() -> reboot(context));
-            return;
-        } else if (message.getMessageType().equals(PushMessage.TYPE_EXIT_KIOSK)) {
-            // Temporarily exit kiosk mode
-            LocalBroadcastManager.getInstance(context).
-                sendBroadcast(new Intent(Const.ACTION_EXIT_KIOSK));
-            return;
-        } else if (message.getMessageType().equals(PushMessage.TYPE_ADMIN_PANEL)) {
-            LocalBroadcastManager.getInstance(context).
-                    sendBroadcast(new Intent(Const.ACTION_ADMIN_PANEL));
-            return;
-        } else if (message.getMessageType().equals(PushMessage.TYPE_CLEAR_DOWNLOADS)) {
-            // Clear download history
-            AsyncTask.execute(() -> clearDownloads(context));
-            return;
-        } else if (message.getMessageType().equals(PushMessage.TYPE_INTENT)) {
-            // Run a system intent (like settings or ACTION_VIEW)
-            AsyncTask.execute(() -> callIntent(context, message.getPayloadJSON()));
-            return;
-        } else if (message.getMessageType().equals(PushMessage.TYPE_GRANT_PERMISSIONS)) {
-            // Grant permissions to apps
-            AsyncTask.execute(() -> grantPermissions(context, message.getPayloadJSON()));
-            return;
-        } else if (message.getMessageType().equals(PushMessage.TYPE_CLEAR_APP_DATA)) {
-            // Clear application data
-            AsyncTask.execute(() -> clearAppData(context, message.getPayloadJSON()));
-            return;
-        } else if (message.getMessageType().equals(PushMessage.TYPE_NOTIFICATION)) {
-            // Show notification dialog (banner) that only closes when user taps OK
+        } else if (PushMessage.TYPE_NOTIFICATION.equals(type)) {
             showNotificationToUser(context, message.getPayloadJSON());
+            sendExecAck(context, messageId, ExecutionResult.ok());
             return;
         }
 
-        // Send broadcast to all plugins
-        Intent intent = new Intent(Const.INTENT_PUSH_NOTIFICATION_PREFIX + message.getMessageType());
+        // Background handlers — async via AsyncTask (F3 will move to SingleThreadExecutor + outbox).
+        // Each handler returns ExecutionResult; AckQueue receives it.
+        if (PushMessage.TYPE_UNINSTALL_APP.equals(type)) {
+            AsyncTask.execute(() -> sendExecAck(context, messageId, uninstallApplication(context, message.getPayloadJSON())));
+            return;
+        } else if (PushMessage.TYPE_DELETE_FILE.equals(type)) {
+            AsyncTask.execute(() -> sendExecAck(context, messageId, deleteFile(context, message.getPayloadJSON())));
+            return;
+        } else if (PushMessage.TYPE_DELETE_DIR.equals(type)) {
+            AsyncTask.execute(() -> sendExecAck(context, messageId, deleteDir(context, message.getPayloadJSON())));
+            return;
+        } else if (PushMessage.TYPE_PURGE_DIR.equals(type)) {
+            AsyncTask.execute(() -> sendExecAck(context, messageId, purgeDir(context, message.getPayloadJSON())));
+            return;
+        } else if (PushMessage.TYPE_RUN_COMMAND.equals(type)) {
+            AsyncTask.execute(() -> sendExecAck(context, messageId, runCommand(context, message.getPayloadJSON())));
+            return;
+        } else if (PushMessage.TYPE_REBOOT.equals(type)) {
+            // ACK BEFORE reboot — once reboot triggers, process dies and ACK won't make it
+            sendExecAck(context, messageId, ExecutionResult.ok());
+            AsyncTask.execute(() -> reboot(context));
+            return;
+        } else if (PushMessage.TYPE_CLEAR_DOWNLOADS.equals(type)) {
+            AsyncTask.execute(() -> sendExecAck(context, messageId, clearDownloads(context)));
+            return;
+        } else if (PushMessage.TYPE_INTENT.equals(type)) {
+            AsyncTask.execute(() -> sendExecAck(context, messageId, callIntent(context, message.getPayloadJSON())));
+            return;
+        } else if (PushMessage.TYPE_GRANT_PERMISSIONS.equals(type)) {
+            AsyncTask.execute(() -> sendExecAck(context, messageId, grantPermissions(context, message.getPayloadJSON())));
+            return;
+        } else if (PushMessage.TYPE_CLEAR_APP_DATA.equals(type)) {
+            AsyncTask.execute(() -> sendExecAck(context, messageId, clearAppData(context, message.getPayloadJSON())));
+            return;
+        }
+
+        // Unknown type — broadcast to plugins (best-effort, ack as ok)
+        Intent intent = new Intent(Const.INTENT_PUSH_NOTIFICATION_PREFIX + type);
         JSONObject jsonObject = message.getPayloadJSON();
         if (jsonObject != null) {
             intent.putExtra(Const.INTENT_PUSH_NOTIFICATION_EXTRA, jsonObject.toString());
         }
         context.sendBroadcast(intent);
+        sendExecAck(context, messageId, ExecutionResult.ok());
+    }
+
+    private static void sendExecAck(Context context, int messageId, ExecutionResult result) {
+        if (messageId <= 0) return;
+        long executedAt = System.currentTimeMillis();
+        AckQueue.getInstance(context).enqueueExecution(
+                messageId, executedAt,
+                result.success ? AckExecutionRequest.STATUS_OK : AckExecutionRequest.STATUS_FAILED,
+                result.failureCode, result.failureMessage);
     }
 
     private static void runApplication(Context context, JSONObject payload) {
@@ -298,41 +317,40 @@ public class PushNotificationProcessor {
         }
     }
 
-    private static void uninstallApplication(Context context, JSONObject payload) {
+    private static ExecutionResult uninstallApplication(Context context, JSONObject payload) {
         if (payload == null) {
             RemoteLogger.log(context, Const.LOG_WARN, "Uninstall request failed: no package specified");
-            return;
+            return ExecutionResult.fail("MISSING_PAYLOAD", "no package specified");
         }
         if (!Utils.isDeviceOwner(context)) {
-            // Require device owner for non-interactive uninstallation
             RemoteLogger.log(context, Const.LOG_WARN, "Uninstall request failed: no device owner");
-            return;
+            return ExecutionResult.fail("NOT_DEVICE_OWNER", "device is not owner");
         }
-
         try {
             String pkg = payload.getString("pkg");
             InstallUtils.silentUninstallApplication(context, pkg);
             RemoteLogger.log(context, Const.LOG_INFO, "Uninstalled application: " + pkg);
+            return ExecutionResult.ok();
         } catch (Exception e) {
             RemoteLogger.log(context, Const.LOG_WARN, "Uninstall request failed: " + e.getMessage());
-            e.printStackTrace();
+            return ExecutionResult.fail("UNINSTALL_EXCEPTION", e.getMessage());
         }
     }
 
-    private static void deleteFile(Context context, JSONObject payload) {
+    private static ExecutionResult deleteFile(Context context, JSONObject payload) {
         if (payload == null) {
             RemoteLogger.log(context, Const.LOG_WARN, "File delete failed: no path specified");
-            return;
+            return ExecutionResult.fail("MISSING_PAYLOAD", "no path specified");
         }
-
         try {
             String path = payload.getString("path");
             File file = new File(Environment.getExternalStorageDirectory(), path);
             file.delete();
             RemoteLogger.log(context, Const.LOG_INFO, "Deleted file: " + path);
+            return ExecutionResult.ok();
         } catch (Exception e) {
             RemoteLogger.log(context, Const.LOG_WARN, "File delete failed: " + e.getMessage());
-            e.printStackTrace();
+            return ExecutionResult.fail("DELETE_EXCEPTION", e.getMessage());
         }
     }
 
@@ -346,76 +364,75 @@ public class PushNotificationProcessor {
         fileOrDirectory.delete();
     }
 
-    private static void deleteDir(Context context, JSONObject payload) {
+    private static ExecutionResult deleteDir(Context context, JSONObject payload) {
         if (payload == null) {
             RemoteLogger.log(context, Const.LOG_WARN, "Directory delete failed: no path specified");
-            return;
+            return ExecutionResult.fail("MISSING_PAYLOAD", "no path specified");
         }
-
         try {
             String path = payload.getString("path");
             File file = new File(Environment.getExternalStorageDirectory(), path);
             deleteRecursive(file);
             RemoteLogger.log(context, Const.LOG_INFO, "Deleted directory: " + path);
+            return ExecutionResult.ok();
         } catch (Exception e) {
             RemoteLogger.log(context, Const.LOG_WARN, "Directory delete failed: " + e.getMessage());
-            e.printStackTrace();
+            return ExecutionResult.fail("DELETE_DIR_EXCEPTION", e.getMessage());
         }
     }
 
-    private static void purgeDir(Context context, JSONObject payload) {
+    private static ExecutionResult purgeDir(Context context, JSONObject payload) {
         if (payload == null) {
             RemoteLogger.log(context, Const.LOG_WARN, "Directory purge failed: no path specified");
-            return;
+            return ExecutionResult.fail("MISSING_PAYLOAD", "no path specified");
         }
-
         try {
             String path = payload.getString("path");
             File file = new File(Environment.getExternalStorageDirectory(), path);
             if (!file.isDirectory()) {
                 RemoteLogger.log(context, Const.LOG_WARN, "Directory purge failed: not a directory: " + path);
-                return;
+                return ExecutionResult.fail("NOT_A_DIRECTORY", "path is not a directory");
             }
             String recursive = payload.optString("recursive");
             File[] childFiles = file.listFiles();
-            for (File child : childFiles) {
-                if (recursive == null || !recursive.equals("1")) {
-                    if (!child.isDirectory()) {
-                        child.delete();
+            if (childFiles != null) {
+                for (File child : childFiles) {
+                    if (recursive == null || !recursive.equals("1")) {
+                        if (!child.isDirectory()) {
+                            child.delete();
+                        }
+                    } else {
+                        deleteRecursive(child);
                     }
-                } else {
-                    deleteRecursive(child);
                 }
             }
             RemoteLogger.log(context, Const.LOG_INFO, "Purged directory: " + path);
+            return ExecutionResult.ok();
         } catch (Exception e) {
             RemoteLogger.log(context, Const.LOG_WARN, "Directory purge failed: " + e.getMessage());
-            e.printStackTrace();
+            return ExecutionResult.fail("PURGE_EXCEPTION", e.getMessage());
         }
     }
 
-    private static void runCommand(Context context, JSONObject payload) {
+    private static ExecutionResult runCommand(Context context, JSONObject payload) {
         if (payload == null) {
             RemoteLogger.log(context, Const.LOG_WARN, "Command failed: no command specified");
-            return;
+            return ExecutionResult.fail("MISSING_PAYLOAD", "no command specified");
         }
-
         try {
             String command = payload.getString("command");
             Log.d(Const.LOG_TAG, "Executing a command: " + command);
             String result = SystemUtils.executeShellCommand(command, true);
             String msg = "Executed a command: " + command;
             if (!result.equals("")) {
-                if (result.length() > 200) {
-                    result = result.substring(0, 200) + "...";
-                }
-                msg += " Result: " + result;
+                String displayResult = result.length() > 200 ? result.substring(0, 200) + "..." : result;
+                msg += " Result: " + displayResult;
             }
             RemoteLogger.log(context, Const.LOG_DEBUG, msg);
-
+            return ExecutionResult.ok(result);
         } catch (Exception e) {
             RemoteLogger.log(context, Const.LOG_WARN, "Command failed: " + e.getMessage());
-            e.printStackTrace();
+            return ExecutionResult.fail("COMMAND_EXCEPTION", e.getMessage());
         }
     }
 
@@ -430,28 +447,32 @@ public class PushNotificationProcessor {
         }
     }
 
-    private static void clearDownloads(Context context) {
+    private static ExecutionResult clearDownloads(Context context) {
         RemoteLogger.log(context, Const.LOG_WARN, "Clear download history by a Push message");
-        DatabaseHelper dbHelper = DatabaseHelper.instance(context);
-        SQLiteDatabase db = dbHelper.getWritableDatabase();
-        List<Download> downloads = DownloadTable.selectAll(db);
-        for (Download d: downloads) {
-            File file = new File(d.getPath());
-            try {
-                file.delete();
-            } catch (Exception e) {
-                e.printStackTrace();
+        try {
+            DatabaseHelper dbHelper = DatabaseHelper.instance(context);
+            SQLiteDatabase db = dbHelper.getWritableDatabase();
+            List<Download> downloads = DownloadTable.selectAll(db);
+            for (Download d : downloads) {
+                File file = new File(d.getPath());
+                try {
+                    file.delete();
+                } catch (Exception e) {
+                    // continue with others
+                }
             }
+            DownloadTable.deleteAll(db);
+            return ExecutionResult.ok();
+        } catch (Exception e) {
+            return ExecutionResult.fail("CLEAR_DOWNLOADS_EXCEPTION", e.getMessage());
         }
-        DownloadTable.deleteAll(db);
     }
 
-    private static void callIntent(Context context, JSONObject payload) {
+    private static ExecutionResult callIntent(Context context, JSONObject payload) {
         if (payload == null) {
             RemoteLogger.log(context, Const.LOG_WARN, "Calling intent failed: no parameters specified");
-            return;
+            return ExecutionResult.fail("MISSING_PAYLOAD", "no parameters specified");
         }
-
         try {
             String action = payload.getString("action");
             Log.d(Const.LOG_TAG, "Calling intent: " + action);
@@ -485,13 +506,14 @@ public class PushNotificationProcessor {
             i.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK);
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             context.startActivity(i);
+            return ExecutionResult.ok();
         } catch (Exception e) {
             RemoteLogger.log(context, Const.LOG_WARN, "Calling intent failed: " + e.getMessage());
-            e.printStackTrace();
+            return ExecutionResult.fail("INTENT_EXCEPTION", e.getMessage());
         }
     }
 
-    private static void grantPermissions(Context context, JSONObject payload) {
+    private static ExecutionResult grantPermissions(Context context, JSONObject payload) {
         if (!Utils.isDeviceOwner(context) && !BuildConfig.SYSTEM_PRIVILEGES) {
             RemoteLogger.log(context, Const.LOG_WARN, "Can't auto grant permissions: no device owner");
         }
@@ -528,9 +550,14 @@ public class PushNotificationProcessor {
             }
         }
 
-        for (String app: apps) {
-            Utils.autoGrantRequestedPermissions(context, app,
-                    config.getAppPermissions(), false);
+        try {
+            for (String app : apps) {
+                Utils.autoGrantRequestedPermissions(context, app,
+                        config.getAppPermissions(), false);
+            }
+            return ExecutionResult.ok();
+        } catch (Exception e) {
+            return ExecutionResult.fail("GRANT_PERMISSIONS_EXCEPTION", e.getMessage());
         }
     }
 
@@ -552,9 +579,9 @@ public class PushNotificationProcessor {
         RemoteLogger.log(context, Const.LOG_INFO, "Notification dialog shown to user: " + text);
     }
 
-    private static void clearAppData(Context context, JSONObject payload) {
+    private static ExecutionResult clearAppData(Context context, JSONObject payload) {
         if (payload == null) {
-            return;
+            return ExecutionResult.fail("MISSING_PAYLOAD", "no package specified");
         }
         try {
             String pkg = payload.getString("pkg");
@@ -571,13 +598,13 @@ public class PushNotificationProcessor {
                                     "App data for " + packageName + (succeeded ? " " : " not ") + "cleared");
                         }
                 );
+                return ExecutionResult.ok();
             } else {
-                throw new Exception("Unsupported in SDK " + Build.VERSION.SDK_INT);
+                return ExecutionResult.fail("UNSUPPORTED_SDK", "Unsupported in SDK " + Build.VERSION.SDK_INT);
             }
-
         } catch (Exception e) {
             RemoteLogger.log(context, Const.LOG_ERROR, "Failed to clear app data: " + e.getMessage());
-            e.printStackTrace();
+            return ExecutionResult.fail("CLEAR_APP_DATA_EXCEPTION", e.getMessage());
         }
     }
 

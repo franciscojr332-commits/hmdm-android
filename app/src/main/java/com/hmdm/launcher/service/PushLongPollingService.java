@@ -19,6 +19,7 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 import com.hmdm.launcher.BuildConfig;
 import com.hmdm.launcher.Const;
 import com.hmdm.launcher.R;
+import com.hmdm.launcher.ack.AckQueue;
 import com.hmdm.launcher.helper.CryptoHelper;
 import com.hmdm.launcher.helper.SettingsHelper;
 import com.hmdm.launcher.json.PushMessage;
@@ -152,8 +153,15 @@ public class PushLongPollingService extends Service {
                                 filteredMessages.put(message.getMessageType(), message);
                             }
                         }
+                        // HMDM-EVOLUTION F2: send delivery ACK immediately upon receipt,
+                        // before dispatching to handlers. Server flips status IN_FLIGHT → DELIVERED.
+                        long receivedAt = System.currentTimeMillis();
                         for (Map.Entry<String, PushMessage> entry : filteredMessages.entrySet()) {
-                            PushNotificationProcessor.process(entry.getValue(), context);
+                            PushMessage m = entry.getValue();
+                            if (m.getId() != null && m.getId() > 0) {
+                                AckQueue.getInstance(context).enqueueDelivery(m.getId(), receivedAt);
+                            }
+                            PushNotificationProcessor.process(m, context);
                         }
                     }
                 } else if (response.code() >= 400 && response.code() < 500) {

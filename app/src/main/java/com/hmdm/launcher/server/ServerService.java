@@ -20,6 +20,8 @@
 package com.hmdm.launcher.server;
 
 
+import com.hmdm.launcher.ack.AckDeliveryRequest;
+import com.hmdm.launcher.ack.AckExecutionRequest;
 import com.hmdm.launcher.db.LocationTable;
 import com.hmdm.launcher.json.DetailedInfo;
 import com.hmdm.launcher.json.DetailedInfoConfigResponse;
@@ -46,8 +48,26 @@ public interface ServerService {
 
     static final String REQUEST_SIGNATURE_HEADER = "X-Request-Signature";
     static final String CPU_ARCH_HEADER = "X-CPU-Arch";
+    // HMDM-EVOLUTION F2: agent capability declaration
+    static final String AGENT_ACK_CAPABLE_HEADER = "X-Agent-Ack-Capable";
 
+    // HMDM-EVOLUTION F2: ACK protocol endpoints
+    @POST("{project}/rest/notification/ack/delivery")
+    @Headers("Content-Type: application/json")
+    Call<ResponseBody> ackDelivery(@Path("project") String project,
+                                    @Header(REQUEST_SIGNATURE_HEADER) String signature,
+                                    @Body AckDeliveryRequest body);
+
+    @POST("{project}/rest/notification/ack/execution")
+    @Headers("Content-Type: application/json")
+    Call<ResponseBody> ackExecution(@Path("project") String project,
+                                     @Header(REQUEST_SIGNATURE_HEADER) String signature,
+                                     @Body AckExecutionRequest body);
+
+    // HMDM-EVOLUTION F2: header X-Agent-Ack-Capable: 1 declared via @Headers static value
+    // Server uses it to mark devices.agent_supports_ack=TRUE (enables reconciliation reset for this device).
     @POST("{project}/rest/public/sync/configuration/{number}")
+    @Headers("X-Agent-Ack-Capable: 1")
     Call<ResponseBody> enrollAndGetServerConfigRaw(@Path("project") String project,
                                                    @Path("number") String number,
                                                    @Header(REQUEST_SIGNATURE_HEADER) String signature,
@@ -55,12 +75,14 @@ public interface ServerService {
                                                    @Body DeviceEnrollOptions createOptions);
 
     @GET("{project}/rest/public/sync/configuration/{number}")
+    @Headers("X-Agent-Ack-Capable: 1")
     Call<ResponseBody> getServerConfigRaw(@Path("project") String project,
                                           @Path("number") String number,
                                           @Header(REQUEST_SIGNATURE_HEADER) String signature,
                                           @Header(CPU_ARCH_HEADER) String cpuArch);
 
     @POST("{project}/rest/public/sync/configuration/{number}")
+    @Headers("X-Agent-Ack-Capable: 1")
     Call<ServerConfigResponse> enrollAndGetServerConfig(@Path("project") String project,
                                                         @Path("number") String number,
                                                         @Header(REQUEST_SIGNATURE_HEADER) String signature,
@@ -68,6 +90,7 @@ public interface ServerService {
                                                         @Body DeviceEnrollOptions createOptions);
 
     @GET("{project}/rest/public/sync/configuration/{number}")
+    @Headers("X-Agent-Ack-Capable: 1")
     Call<ServerConfigResponse> getServerConfig(@Path("project") String project,
                                                @Path("number") String number,
                                                @Header(REQUEST_SIGNATURE_HEADER) String signature,

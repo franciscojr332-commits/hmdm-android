@@ -362,6 +362,13 @@ public class MainActivity
             return;
         }
 
+        // HMDM-EVOLUTION F2: drain ACK outbox on app start (retries pending ACKs from previous session)
+        try {
+            com.hmdm.launcher.ack.AckQueue.getInstance(this).resumeUnsent();
+        } catch (Exception e) {
+            // Best-effort, never block startup
+        }
+
         // Disable crashes to avoid "select a launcher" popup
         // Crashlytics will show an exception anyway!
         Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
@@ -652,10 +659,9 @@ public class MainActivity
     }
 
     private void startServices() {
-        // Foreground apps checks are not available in a free version: services are the stubs
-        if (preferences.getInt(Const.PREFERENCES_USAGE_STATISTICS, Const.PREFERENCES_OFF) == Const.PREFERENCES_ON) {
-            startService(new Intent(MainActivity.this, CheckForegroundApplicationService.class));
-        }
+        // Always start foreground app guard service.
+        // In open-source build it now enforces immediate Settings close outside admin session.
+        startService(new Intent(MainActivity.this, CheckForegroundApplicationService.class));
         if (BuildConfig.USE_ACCESSIBILITY &&
             preferences.getInt(Const.PREFERENCES_ACCESSIBILITY_SERVICE, Const.PREFERENCES_OFF) == Const.PREFERENCES_ON) {
             startService(new Intent(MainActivity.this, CheckForegroundAppAccessibilityService.class));
