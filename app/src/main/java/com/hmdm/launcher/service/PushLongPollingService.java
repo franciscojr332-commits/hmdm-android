@@ -14,8 +14,11 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.net.ConnectivityManager;
 import android.net.Network;
+import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.telephony.TelephonyManager;
 import android.util.Log;
 
@@ -75,6 +78,13 @@ public class PushLongPollingService extends Service {
     private ConnectivityManager connectivityManager;
     private ConnectivityManager.NetworkCallback networkCallback;
 
+    // Doze/tela-apagada: WakeLock parcial segurado durante cada poll p/ a requisição não morrer
+    // quando o device dorme. Timeout bound p/ não vazar bateria. (No Redmi/MIUI o decisivo ainda
+    // é o Autostart + "sem restrição de bateria" da MIUI — ver doc.)
+    private PowerManager.WakeLock pollWakeLock;
+    private static final long WAKE_TIMEOUT_MS = 90_000;
+    private static boolean batteryExemptionTried = false;
+
     private final BroadcastReceiver receiver = new BroadcastReceiver() {
         @Override
         public void onReceive( Context context, Intent intent ) {
@@ -93,6 +103,7 @@ public class PushLongPollingService extends Service {
     public void onDestroy() {
         LocalBroadcastManager.getInstance( this ).unregisterReceiver(receiver);
         unregisterNetworkCallback();
+        releaseWake();
         Log.i(Const.LOG_TAG, "PushLongPollingService: service stopped");
         started = false;
         super.onDestroy();
@@ -115,6 +126,10 @@ public class PushLongPollingService extends Service {
 
         registerNetworkCallback();   // B (idempotent)
         scheduleKeepalive();         // A (re-armed on every start, including alarm-triggered)
+        if (!batteryExemptionTried) {
+            batteryExemptionTried = true;
+            requestBatteryExemptionIfNeeded();
+        }
         startPollingThreadIfNeeded();// D
 
         return Service.START_STICKY;
@@ -161,6 +176,8 @@ public class PushLongPollingService extends Service {
                 // aparelho desligado/sem internet. O log é enfileirado e sobe quando reconectar.
                 sampleSimAbsence(context);
 
+                acquireWake();   // mantém CPU/rede vivos durante o poll (mitiga Doze/tela apagada)
+                try {
                 Response<PushResponse> response = null;
 
                 RemoteLogger.log(context, Const.LOG_VERBOSE, "Push long polling inquiry");
@@ -218,6 +235,9 @@ public class PushLongPollingService extends Service {
                     // On exception, we need to wait to avoid looping (B: interruptible)
                     sleepInterruptible(DELAY_AFTER_EXCEPTION_MS);
                 }
+                } finally {
+                    releaseWake();
+                }
             }
         } finally {
             // D: always release the flag so a future onStartCommand / keepalive can restart the thread.
@@ -262,6 +282,46 @@ public class PushLongPollingService extends Service {
             // Outros estados (UNKNOWN, PIN, NETWORK_LOCKED): não mexe na janela.
         } catch (Exception e) {
             // ignore
+        }
+    }
+
+    private void acquireWake() {
+        try {
+            if (pollWakeLock == null) {
+                PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+                if (pm != null) {
+                    pollWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "hmdm:longpoll");
+                    pollWakeLock.setReferenceCounted(false);
+                }
+            }
+            if (pollWakeLock != null && !pollWakeLock.isHeld()) {
+                pollWakeLock.acquire(WAKE_TIMEOUT_MS);
+            }
+        } catch (Exception e) { /* ignore */ }
+    }
+
+    private void releaseWake() {
+        try {
+            if (pollWakeLock != null && pollWakeLock.isHeld()) {
+                pollWakeLock.release();
+            }
+        } catch (Exception e) { /* ignore */ }
+    }
+
+    // Pede isenção de otimização de bateria (Doze whitelist) uma vez. Em device owner o ideal é
+    // confirmar no provisionamento; no Redmi/MIUI ainda precisa Autostart + bateria sem restrição.
+    private void requestBatteryExemptionIfNeeded() {
+        try {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return;
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (pm == null || pm.isIgnoringBatteryOptimizations(getPackageName())) return;
+            Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:" + getPackageName()));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+            RemoteLogger.log(this, Const.LOG_INFO, "Solicitando isencao de otimizacao de bateria");
+        } catch (Exception e) {
+            Log.w(Const.LOG_TAG, "PushLongPolling: battery exemption request failed", e);
         }
     }
 
