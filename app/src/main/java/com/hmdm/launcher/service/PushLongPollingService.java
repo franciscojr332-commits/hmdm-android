@@ -11,10 +11,12 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.os.Build;
 import android.os.IBinder;
+import android.telephony.TelephonyManager;
 import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
@@ -29,6 +31,7 @@ import com.hmdm.launcher.helper.SettingsHelper;
 import com.hmdm.launcher.json.PushMessage;
 import com.hmdm.launcher.json.PushResponse;
 import com.hmdm.launcher.pro.ProUtils;
+import com.hmdm.launcher.receiver.ShutdownReceiver;
 import com.hmdm.launcher.server.ServerService;
 import com.hmdm.launcher.server.ServerServiceKeeper;
 import com.hmdm.launcher.util.RemoteLogger;
@@ -153,6 +156,11 @@ public class PushLongPollingService extends Service {
             }
 
             while (enabled) {
+                // Anti-tamper: amostra estado do SIM a cada ciclo (roda mesmo offline). Persiste a
+                // janela de ausência e reporta quando o chip volta — pega remoção feita com o
+                // aparelho desligado/sem internet. O log é enfileirado e sobe quando reconectar.
+                sampleSimAbsence(context);
+
                 Response<PushResponse> response = null;
 
                 RemoteLogger.log(context, Const.LOG_VERBOSE, "Push long polling inquiry");
@@ -216,6 +224,46 @@ public class PushLongPollingService extends Service {
             threadActive = false;
         }
     };
+
+    // Anti-tamper: rastreia janela "sem chip" mesmo offline. getSimState() não exige permissão.
+    // Marca início quando ABSENT; ao voltar READY, loga a duração total (reportado no reconnect).
+    private static final String KEY_SIM_ABSENT_SINCE = "sim_absent_since";
+    private static final String KEY_SIM_ABSENT_REPORTED = "sim_absent_reported";
+    private void sampleSimAbsence(Context context) {
+        try {
+            TelephonyManager tm = (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
+            if (tm == null) return;
+            int state = tm.getSimState();
+            SharedPreferences sp = context.getApplicationContext()
+                    .getSharedPreferences(ShutdownReceiver.PREFS, Context.MODE_PRIVATE);
+            long since = sp.getLong(KEY_SIM_ABSENT_SINCE, 0);
+            long now = System.currentTimeMillis();
+
+            if (state == TelephonyManager.SIM_STATE_ABSENT) {
+                if (since == 0) {
+                    sp.edit().putLong(KEY_SIM_ABSENT_SINCE, now).putLong(KEY_SIM_ABSENT_REPORTED, 0).apply();
+                    since = now;
+                }
+                // Se já passou >5min sem chip e ainda não reportou o início, avisa (uma vez) ao reconectar.
+                long reported = sp.getLong(KEY_SIM_ABSENT_REPORTED, 0);
+                if (reported == 0 && now - since >= 5 * 60_000) {
+                    RemoteLogger.log(context, Const.LOG_WARN,
+                            "[TAMPER] Aparelho SEM CHIP ha ~" + ((now - since) / 60000) + "min (ainda sem chip)");
+                    sp.edit().putLong(KEY_SIM_ABSENT_REPORTED, now).apply();
+                }
+            } else if (state == TelephonyManager.SIM_STATE_READY) {
+                if (since > 0) {
+                    long durMin = (now - since) / 60000;
+                    RemoteLogger.log(context, Const.LOG_WARN,
+                            "[TAMPER] Aparelho ficou SEM CHIP por ~" + durMin + "min (chip voltou)");
+                    sp.edit().remove(KEY_SIM_ABSENT_SINCE).remove(KEY_SIM_ABSENT_REPORTED).apply();
+                }
+            }
+            // Outros estados (UNKNOWN, PIN, NETWORK_LOCKED): não mexe na janela.
+        } catch (Exception e) {
+            // ignore
+        }
+    }
 
     // B: a sleep that returns early when interrupted (network regained), so the next poll fires now.
     private void sleepInterruptible(long ms) {
