@@ -22,14 +22,32 @@ package com.hmdm.launcher.receiver;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 
 import com.hmdm.launcher.Const;
 import com.hmdm.launcher.util.RemoteLogger;
 
+/**
+ * Anti-tamper: registra desligamento LIMPO (pelo menu). Grava um marcador local ANTES de logar,
+ * porque o RemoteLogger pode não enviar a tempo (rede cai junto). O marcador é lido pelo
+ * BootReceiver no próximo boot p/ reportar a janela off e detectar boot SEM shutdown limpo
+ * (forçado / bateria arrancada).
+ */
 public class ShutdownReceiver extends BroadcastReceiver {
+
+    public static final String PREFS = "tamper";
+    public static final String KEY_CLEAN_SHUTDOWN_AT = "last_clean_shutdown_at";
 
     @Override
     public void onReceive(final Context context, final Intent intent) {
-        RemoteLogger.log(context, Const.LOG_INFO, "Shutting down the device");
+        long now = System.currentTimeMillis();
+        try {
+            SharedPreferences sp = context.getApplicationContext()
+                    .getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            sp.edit().putLong(KEY_CLEAN_SHUTDOWN_AT, now).commit(); // síncrono — processo vai morrer
+        } catch (Exception e) {
+            // ignore
+        }
+        RemoteLogger.log(context, Const.LOG_INFO, "[TAMPER] APARELHO DESLIGADO (menu)");
     }
 }
