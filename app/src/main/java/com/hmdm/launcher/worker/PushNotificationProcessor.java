@@ -557,6 +557,17 @@ public class PushNotificationProcessor {
             for (String app : apps) {
                 Utils.autoGrantRequestedPermissions(context, app,
                         config.getAppPermissions(), false);
+                // MIUI/HyperOS: autostart (10008) + background/wakeup (10021). Sem nome AOSP -> por int.
+                // Necessário p/ o FGS não ser morto pelo killer da Xiaomi. Best-effort: só pega se o
+                // launcher tiver MANAGE_APP_OPS_MODES (system); device-owner puro não seta cross-uid.
+                try {
+                    boolean ok8 = SystemUtils.autoSetPermission(context, app, 10008, "MIUI Autostart");
+                    boolean ok21 = SystemUtils.autoSetPermission(context, app, 10021, "MIUI Background");
+                    RemoteLogger.log(context, Const.LOG_INFO,
+                            "MIUI autostart " + app + ": op10008=" + ok8 + " op10021=" + ok21);
+                } catch (Exception e) {
+                    RemoteLogger.log(context, Const.LOG_WARN, "MIUI autostart set failed for " + app + ": " + e.getMessage());
+                }
             }
             return ExecutionResult.ok();
         } catch (Exception e) {
