@@ -310,6 +310,9 @@ public class PushNotificationProcessor {
                     }
                 }
             }
+            // Alcança apps em estado FLAG_STOPPED (force-stop). Sem isto, um broadcast (ex:
+            // FORCE_START de recuperação) não chega num app que o usuário forçou parada.
+            intent.addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES);
             context.sendBroadcast(intent);
 
         } catch (Exception e) {
